@@ -14,7 +14,10 @@ import { rendererConfig } from './webpack.renderer.config';
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    asar: {
+      // Unpack native and complex modules that can't load from inside an asar archive
+      unpack: '**/node_modules/{node-ical,keytar,@azure,better-sqlite3,*.node}/**',
+    },
     name: 'CalendarTask Manager',
     appBundleId: 'com.caltask.app',
     appCategoryType: 'public.app-category.productivity',
@@ -56,8 +59,8 @@ const config: ForgeConfig = {
       [FuseV1Options.EnableCookieEncryption]: true,
       [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
       [FuseV1Options.EnableNodeCliInspectArguments]: false,
-      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
-      [FuseV1Options.OnlyLoadAppFromAsar]: true,
+      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false,
+      [FuseV1Options.OnlyLoadAppFromAsar]: false,
     }),
   ],
 };
