@@ -18,8 +18,7 @@ export const mainConfig: Configuration = {
     extensions: ['.js', '.ts', '.jsx', '.tsx', '.css', '.json'],
   },
   externals: {
-    // Keep native/complex Node modules out of the webpack bundle
-    'node-ical': 'commonjs node-ical',
+    // keytar has native .node binaries — must stay external and be unpacked from asar
     'keytar': 'commonjs keytar',
   },
 };
