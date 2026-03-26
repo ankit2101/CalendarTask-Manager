@@ -57,6 +57,7 @@ export interface ElectronAPI {
   // Event listeners
   onMeetingEnded: (callback: (event: NormalizedEvent) => void) => () => void;
   onMeetingUpcoming: (callback: (event: NormalizedEvent) => void) => () => void;
+  onCalendarSynced: (callback: (events: NormalizedEvent[]) => void) => () => void;
 }
 
 const api: ElectronAPI = {
@@ -104,6 +105,12 @@ const api: ElectronAPI = {
     const handler = (_: unknown, event: NormalizedEvent) => callback(event);
     ipcRenderer.on(IpcChannel.MEETING_UPCOMING, handler);
     return () => ipcRenderer.removeListener(IpcChannel.MEETING_UPCOMING, handler);
+  },
+
+  onCalendarSynced: (callback) => {
+    const handler = (_: unknown, events: NormalizedEvent[]) => callback(events);
+    ipcRenderer.on(IpcChannel.CALENDAR_SYNCED, handler);
+    return () => ipcRenderer.removeListener(IpcChannel.CALENDAR_SYNCED, handler);
   },
 };
 

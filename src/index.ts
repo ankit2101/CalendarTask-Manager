@@ -1,14 +1,16 @@
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { registerIpcHandlers, setupMeetingEventForwarding } from './main/ipc/handlers';
 import { initTray } from './main/tray';
 import { registerShortcuts } from './main/shortcuts';
 import { createMainWindow, showMainWindow } from './main/windows/main-window';
 import { openQuickNoteWindow } from './main/windows/quick-note-window';
 import { getMeetingDetector } from './main/services/meeting/meeting-detector';
+import { getCalendarManager } from './main/services/calendar/calendar-manager';
 import { appStore } from './main/store/app-store';
 import { initMicrosoftAuth } from './main/services/auth/microsoft-auth';
 import { getGoogleAuth } from './main/services/auth/google-auth';
 import { tokenStore } from './main/services/auth/token-store';
+import { IpcChannel } from './shared/types/ipc-channels';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
@@ -78,6 +80,21 @@ async function initializeApp(): Promise<void> {
   if (!hasAccounts) {
     createMainWindow();
   }
+
+  // Background calendar sync every 10 minutes
+  const SYNC_INTERVAL_MS = 10 * 60 * 1000;
+  setInterval(async () => {
+    try {
+      const events = await getCalendarManager().fetchAllEvents();
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (!win.isDestroyed()) {
+          win.webContents.send(IpcChannel.CALENDAR_SYNCED, events);
+        }
+      });
+    } catch (e) {
+      console.error('[bg-sync] Calendar sync failed:', e);
+    }
+  }, SYNC_INTERVAL_MS);
 }
 
 app.on('ready', () => {

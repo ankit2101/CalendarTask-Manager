@@ -13,6 +13,7 @@ export enum IpcChannel {
   // Meeting events (main -> renderer push)
   MEETING_ENDED = 'meeting:ended',
   MEETING_UPCOMING = 'meeting:upcoming',
+  CALENDAR_SYNCED = 'calendar:synced',
 
   // Notes and AI
   SUBMIT_NOTE = 'note:submit',

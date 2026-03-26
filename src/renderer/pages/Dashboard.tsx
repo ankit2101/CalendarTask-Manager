@@ -101,6 +101,14 @@ export default function Dashboard() {
     fetchEvents(false);
   }, [fetchEvents]);
 
+  // Auto-refresh when background sync delivers new events
+  useEffect(() => {
+    return window.api.onCalendarSynced(events => {
+      setEvents(events);
+      setLastRefresh(new Date());
+    });
+  }, []);
+
   const today = startOfDay(new Date());
   const isToday = isSameDay(selectedDate, today);
 
