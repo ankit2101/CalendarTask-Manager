@@ -316,38 +316,54 @@ class _EventCard extends ConsumerWidget {
               ),
             ],
 
-            // Note action row — hidden for private events
-            if (!event.isPrivate && status == 'past') ...[
+            // Note action row — hidden for private events, shown for active & past
+            if (!event.isPrivate && (status == 'past' || status == 'active')) ...[
               const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  if (status == 'active')
+                    Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: CatppuccinMocha.green.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: CatppuccinMocha.green.withValues(alpha: 0.3)),
+                      ),
+                      child: const Text(
+                        'IN PROGRESS',
+                        style: TextStyle(color: CatppuccinMocha.green, fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+                      ),
+                    ),
                   if (hasNote)
                     const Text('\u2713 Note saved', style: TextStyle(color: CatppuccinMocha.green, fontSize: 12))
                   else ...[
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 14),
-                      color: CatppuccinMocha.overlay0,
-                      tooltip: 'Dismiss reminder',
-                      constraints: const BoxConstraints(),
-                      padding: EdgeInsets.zero,
-                      onPressed: () =>
-                          ref.read(dismissedMeetingsProvider.notifier).dismiss(event.id),
-                    ),
-                    const SizedBox(width: 8),
+                    if (status == 'past') ...[
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 14),
+                        color: CatppuccinMocha.overlay0,
+                        tooltip: 'Dismiss reminder',
+                        constraints: const BoxConstraints(),
+                        padding: EdgeInsets.zero,
+                        onPressed: () =>
+                            ref.read(dismissedMeetingsProvider.notifier).dismiss(event.id),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     OutlinedButton(
                       onPressed: () => showDialog(
                         context: context,
                         builder: (_) => QuickNoteDialog(event: event),
                       ),
                       style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: CatppuccinMocha.yellow.withValues(alpha: 0.4)),
-                        foregroundColor: CatppuccinMocha.yellow,
+                        side: BorderSide(color: (status == 'active' ? CatppuccinMocha.green : CatppuccinMocha.yellow).withValues(alpha: 0.4)),
+                        foregroundColor: status == 'active' ? CatppuccinMocha.green : CatppuccinMocha.yellow,
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         minimumSize: Size.zero,
                         textStyle: const TextStyle(fontSize: 12),
                       ),
-                      child: const Text('+ Add Notes'),
+                      child: Text(status == 'active' ? '+ Live Notes' : '+ Add Notes'),
                     ),
                   ],
                 ],

@@ -19,6 +19,13 @@ class QuickNoteDialog extends ConsumerStatefulWidget {
 class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
   final _noteController = TextEditingController();
   bool _isExtracting = false;
+
+  bool get _isActive {
+    final now = DateTime.now();
+    final start = DateTime.parse(widget.event.start);
+    final end = DateTime.parse(widget.event.end);
+    return now.isAfter(start) && now.isBefore(end);
+  }
   bool _isSaving = false;
   String? _extractError;
   List<ActionItem> _actionItems = [];
@@ -113,13 +120,38 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Header
-              Text(
-                event.title,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: CatppuccinMocha.text,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      event.title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: CatppuccinMocha.text,
+                      ),
+                    ),
+                  ),
+                  if (_isActive) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: CatppuccinMocha.green.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: CatppuccinMocha.green.withValues(alpha: 0.4)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.circle, size: 7, color: CatppuccinMocha.green),
+                          SizedBox(width: 4),
+                          Text('LIVE', style: TextStyle(color: CatppuccinMocha.green, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 4),
               Text(
@@ -150,7 +182,9 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
                 autofocus: true,
                 style: const TextStyle(color: CatppuccinMocha.text, fontSize: 14),
                 decoration: InputDecoration(
-                  hintText: 'What happened in this meeting? Decisions made, topics discussed...',
+                  hintText: _isActive
+                      ? 'Capture notes as the meeting progresses — decisions, topics, action items...'
+                      : 'What happened in this meeting? Decisions made, topics discussed...',
                   hintStyle: const TextStyle(color: CatppuccinMocha.overlay0, fontSize: 14),
                   filled: true,
                   fillColor: CatppuccinMocha.surface0,
