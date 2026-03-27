@@ -1,4 +1,19 @@
 import { app, BrowserWindow } from 'electron';
+import * as path from 'path';
+import Module from 'module';
+
+// Patch Node's module resolution so that external packages (node-ical, keytar)
+// can be found when the webpack bundle runs from .webpack/main/ inside an asar.
+// Without this, require('node-ical') fails because Node only searches upward
+// from .webpack/main/ and doesn't find the root-level node_modules.
+const appRoot = app.isPackaged
+  ? app.getAppPath()                         // e.g. /path/to/app.asar
+  : path.resolve(__dirname, '..', '..');     // dev: project root
+const extraModulePath = path.join(appRoot, 'node_modules');
+if (!((Module as any)._nodeModulePaths('') as string[]).includes(extraModulePath)) {
+  (Module as any).globalPaths.push(extraModulePath);
+}
+
 import { registerIpcHandlers, setupMeetingEventForwarding } from './main/ipc/handlers';
 import { initTray } from './main/tray';
 import { registerShortcuts } from './main/shortcuts';

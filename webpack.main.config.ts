@@ -1,5 +1,5 @@
 import type { Configuration } from 'webpack';
-import TerserPlugin from 'terser-webpack-plugin';
+import webpack from 'webpack';
 
 import { rules } from './webpack.rules';
 import { plugins } from './webpack.plugins';
@@ -14,25 +14,23 @@ export const mainConfig: Configuration = {
   module: {
     rules,
   },
-  plugins,
+  plugins: [
+    ...plugins,
+    // Make __APP_ROOT__ available at runtime so externals can be resolved
+    // from the correct path inside a packaged asar.
+    new webpack.DefinePlugin({
+      __APP_ROOT__: 'require("path").resolve(require("electron").app.isPackaged ? require("electron").app.getAppPath() : __dirname, "..")',
+    }),
+  ],
   resolve: {
     extensions: ['.js', '.ts', '.jsx', '.tsx', '.css', '.json'],
   },
   externals: {
     // keytar has native .node binaries — must stay external and be unpacked from asar
     'keytar': 'commonjs keytar',
-  },
-  optimization: {
-    minimizer: [
-      new TerserPlugin({
-        terserOptions: {
-          mangle: {
-            // luxon (used by node-ical) calls BigInt() at runtime;
-            // terser must not rename/mangle it or the app crashes.
-            reserved: ['BigInt'],
-          },
-        },
-      }),
-    ],
+    // node-ical depends on temporal-polyfill which uses BigInt extensively;
+    // webpack + terser break the global BigInt reference when bundling it.
+    // Keep it external and load via require-from-root helper.
+    'node-ical': 'commonjs node-ical',
   },
 };
