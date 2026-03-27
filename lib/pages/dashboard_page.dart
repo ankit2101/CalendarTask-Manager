@@ -1,0 +1,329 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+import '../core/theme/catppuccin_mocha.dart';
+import '../core/constants.dart';
+import '../models/calendar_event.dart';
+import '../providers/app_providers.dart';
+import '../widgets/quick_note_dialog.dart';
+
+class DashboardPage extends ConsumerStatefulWidget {
+  const DashboardPage({super.key});
+
+  @override
+  ConsumerState<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends ConsumerState<DashboardPage> {
+  DateTime _selectedDate = DateTime.now();
+
+  DateTime _startOfDay(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  String _eventStatus(NormalizedEvent event) {
+    final now = DateTime.now();
+    final start = DateTime.parse(event.start);
+    final end = DateTime.parse(event.end);
+    if (now.isAfter(end)) return 'past';
+    if (now.isAfter(start)) return 'active';
+    return 'upcoming';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final eventsAsync = ref.watch(eventsProvider);
+    final history = ref.watch(meetingHistoryProvider);
+    final notedEventIds = history.map((r) => r.eventId).toSet();
+    final today = _startOfDay(DateTime.now());
+    final isToday = _isSameDay(_selectedDate, today);
+
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left, color: CatppuccinMocha.overlay0),
+                          onPressed: () => setState(() {
+                            _selectedDate = _selectedDate.subtract(const Duration(days: 1));
+                          }),
+                        ),
+                        Text(
+                          isToday ? 'Today' : DateFormat('EEEE').format(_selectedDate),
+                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: CatppuccinMocha.text),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.chevron_right, color: CatppuccinMocha.overlay0),
+                          onPressed: () => setState(() {
+                            _selectedDate = _selectedDate.add(const Duration(days: 1));
+                          }),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      DateFormat('EEEE, MMMM d').format(_selectedDate),
+                      style: const TextStyle(fontSize: 13, color: CatppuccinMocha.overlay0),
+                    ),
+                  ],
+                ),
+              ),
+              if (!isToday)
+                TextButton(
+                  onPressed: () => setState(() => _selectedDate = today),
+                  child: const Text('Today'),
+                ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: () => ref.read(eventsProvider.notifier).refresh(),
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Refresh'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Events list
+          Expanded(
+            child: eventsAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: CatppuccinMocha.red.withValues(alpha: 0.1),
+                    border: Border.all(color: CatppuccinMocha.red),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text('$e', style: const TextStyle(color: CatppuccinMocha.red)),
+                ),
+              ),
+              data: (events) {
+                final dayEvents = events.where((e) {
+                  final start = DateTime.parse(e.start);
+                  return _isSameDay(start, _selectedDate) && !isLeaveEvent(e.title);
+                }).toList();
+
+                final now = DateTime.now();
+                final missingCount = dayEvents.where((e) =>
+                    DateTime.parse(e.end).isBefore(now) && !notedEventIds.contains(e.id)).length;
+
+                if (dayEvents.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('No meetings on this day.', style: TextStyle(color: CatppuccinMocha.overlay0)),
+                        if (events.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 8),
+                            child: Text(
+                              'Add calendar accounts in the Accounts tab to see your events.',
+                              style: TextStyle(fontSize: 13, color: CatppuccinMocha.overlay0),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }
+
+                return ListView(
+                  children: [
+                    if (missingCount > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: CatppuccinMocha.yellow.withValues(alpha: 0.1),
+                          border: Border.all(color: CatppuccinMocha.yellow.withValues(alpha: 0.25)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '$missingCount meeting${missingCount != 1 ? 's' : ''} need${missingCount == 1 ? 's' : ''} notes',
+                          style: const TextStyle(color: CatppuccinMocha.yellow, fontSize: 13),
+                        ),
+                      ),
+                    ...dayEvents.map((event) => _EventCard(
+                      event: event,
+                      status: _eventStatus(event),
+                      hasNote: notedEventIds.contains(event.id),
+                      isMissing: DateTime.parse(event.end).isBefore(now) && !notedEventIds.contains(event.id),
+                    )),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EventCard extends ConsumerWidget {
+  final NormalizedEvent event;
+  final String status;
+  final bool hasNote;
+  final bool isMissing;
+
+  const _EventCard({
+    required this.event,
+    required this.status,
+    required this.hasNote,
+    required this.isMissing,
+  });
+
+  static const _statusColors = {
+    'past': CatppuccinMocha.overlay0,
+    'active': CatppuccinMocha.green,
+    'upcoming': CatppuccinMocha.text,
+  };
+
+  static const _statusDots = {'past': '\u25CB', 'active': '\u25CF', 'upcoming': '\u25CC'};
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final calColor = accountColor(event.accountId);
+    final borderColor = isMissing ? CatppuccinMocha.yellow : calColor;
+    final timeFormat = DateFormat('h:mm a');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: CatppuccinMocha.surface0,
+        borderRadius: BorderRadius.circular(8),
+        border: Border(left: BorderSide(color: borderColor, width: 4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Title row
+          Row(
+            children: [
+              Text(
+                _statusDots[status]!,
+                style: TextStyle(color: _statusColors[status], fontSize: 12),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  event.title,
+                  style: const TextStyle(fontWeight: FontWeight.w600, color: CatppuccinMocha.text),
+                ),
+              ),
+              if (isMissing)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: CatppuccinMocha.yellow.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'NOTE MISSING',
+                    style: TextStyle(color: CatppuccinMocha.yellow, fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+                  ),
+                ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: calColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: calColor.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  event.provider == CalendarProvider.microsoft ? 'MS' :
+                  event.provider == CalendarProvider.google ? 'G' : 'ICS',
+                  style: TextStyle(color: calColor, fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+
+          // Time + attendees
+          Row(
+            children: [
+              Text(
+                '${timeFormat.format(DateTime.parse(event.start))} \u2013 ${timeFormat.format(DateTime.parse(event.end))}',
+                style: const TextStyle(color: CatppuccinMocha.subtext0, fontSize: 13),
+              ),
+              if (event.attendees.length > 1)
+                Text(
+                  ' \u00B7 ${event.attendees.length} attendees',
+                  style: const TextStyle(color: CatppuccinMocha.subtext0, fontSize: 13),
+                ),
+              if (event.isOnlineMeeting)
+                Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: CatppuccinMocha.blue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text('Online', style: TextStyle(color: CatppuccinMocha.blue, fontSize: 11)),
+                ),
+            ],
+          ),
+
+          if (event.location != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              event.location!,
+              style: const TextStyle(color: CatppuccinMocha.overlay0, fontSize: 12),
+            ),
+          ],
+
+          // Note action row for past events
+          if (status == 'past') ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (hasNote)
+                  const Text('\u2713 Note saved', style: TextStyle(color: CatppuccinMocha.green, fontSize: 12))
+                else ...[
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 14),
+                    color: CatppuccinMocha.overlay0,
+                    tooltip: 'Dismiss reminder',
+                    constraints: const BoxConstraints(),
+                    padding: EdgeInsets.zero,
+                    onPressed: () =>
+                        ref.read(dismissedMeetingsProvider.notifier).dismiss(event.id),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    onPressed: () => showDialog(
+                      context: context,
+                      builder: (_) => QuickNoteDialog(event: event),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: CatppuccinMocha.yellow.withValues(alpha: 0.4)),
+                      foregroundColor: CatppuccinMocha.yellow,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      minimumSize: Size.zero,
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                    child: const Text('+ Add Notes'),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
