@@ -105,6 +105,12 @@ class MeetingHistoryNotifier extends StateNotifier<List<MeetingRecord>> {
     state = db.getMeetingHistory();
   }
 
+  Future<void> deleteRecord(String eventId) async {
+    final db = await AppDatabase.getInstance();
+    await db.deleteMeetingRecord(eventId);
+    state = db.getMeetingHistory();
+  }
+
   void reload() => _load();
 }
 
@@ -138,6 +144,12 @@ class TodosNotifier extends StateNotifier<List<TodoTask>> {
   Future<void> deleteTodo(String id) async {
     final db = await AppDatabase.getInstance();
     await db.deleteTodo(id);
+    state = db.getTodos();
+  }
+
+  Future<void> deleteTodosByMeetingId(String meetingEventId) async {
+    final db = await AppDatabase.getInstance();
+    await db.deleteTodosByMeetingId(meetingEventId);
     state = db.getTodos();
   }
 

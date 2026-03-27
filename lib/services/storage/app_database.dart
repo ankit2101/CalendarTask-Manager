@@ -75,6 +75,18 @@ class AppDatabase {
     await _prefs.setString('meetingHistory', jsonEncode(history.map((r) => r.toJson()).toList()));
   }
 
+  Future<void> deleteMeetingRecord(String eventId) async {
+    final history = getMeetingHistory();
+    history.removeWhere((r) => r.eventId == eventId);
+    await _prefs.setString('meetingHistory', jsonEncode(history.map((r) => r.toJson()).toList()));
+  }
+
+  Future<void> deleteTodosByMeetingId(String meetingEventId) async {
+    final todos = getTodos();
+    todos.removeWhere((t) => t.meetingEventId == meetingEventId);
+    await _prefs.setString('todos', jsonEncode(todos.map((t) => t.toJson()).toList()));
+  }
+
   // Dismissed meetings
   Set<String> getDismissedMeetings() {
     final json = _prefs.getString('dismissedMeetings');
