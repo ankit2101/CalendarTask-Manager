@@ -160,10 +160,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             }).toList(),
             onChanged: (val) {
               if (val == null) return;
+              // claudeClientProvider watches settingsProvider and rebuilds
+              // automatically — no manual invalidate needed here.
               ref.read(settingsProvider.notifier).update(
                 settings.copyWith(claudeModelId: val),
               );
-              ref.invalidate(claudeClientProvider);
             },
           ),
           const SizedBox(height: 24),

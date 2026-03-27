@@ -156,13 +156,14 @@ class TodosNotifier extends StateNotifier<List<TodoTask>> {
   void reload() => _load();
 }
 
-// Claude AI client — loads API key + selected model from storage on creation
+// Claude AI client — watches settingsProvider so model changes take effect
+// immediately without a race against the async DB write.
 final claudeClientProvider = FutureProvider<ClaudeClient>((ref) async {
+  final settings = ref.watch(settingsProvider); // auto-rebuilds on model change
   final client = ClaudeClient();
   final key = await TokenStore.instance.loadSecret('claude-api-key');
   if (key != null && key.isNotEmpty) client.setApiKey(key);
-  final db = await AppDatabase.getInstance();
-  client.setModel(db.getSettings().claudeModelId);
+  client.setModel(settings.claudeModelId);
   return client;
 });
 
