@@ -1,5 +1,5 @@
 import type { Configuration } from 'webpack';
-import webpack from 'webpack';
+import TerserPlugin from 'terser-webpack-plugin';
 
 import { rules } from './webpack.rules';
 import { plugins } from './webpack.plugins';
@@ -10,27 +10,32 @@ export const mainConfig: Configuration = {
    * that runs in the main process.
    */
   entry: './src/index.ts',
-  // Put your normal webpack config below here
   module: {
     rules,
   },
-  plugins: [
-    ...plugins,
-    // Make __APP_ROOT__ available at runtime so externals can be resolved
-    // from the correct path inside a packaged asar.
-    new webpack.DefinePlugin({
-      __APP_ROOT__: 'require("path").resolve(require("electron").app.isPackaged ? require("electron").app.getAppPath() : __dirname, "..")',
-    }),
-  ],
+  plugins,
   resolve: {
     extensions: ['.js', '.ts', '.jsx', '.tsx', '.css', '.json'],
   },
   externals: {
-    // keytar has native .node binaries — must stay external and be unpacked from asar
+    // keytar has native .node binaries — must stay external
     'keytar': 'commonjs keytar',
-    // node-ical depends on temporal-polyfill which uses BigInt extensively;
-    // webpack + terser break the global BigInt reference when bundling it.
-    // Keep it external and load via require-from-root helper.
-    'node-ical': 'commonjs node-ical',
+  },
+  optimization: {
+    // Disable scope hoisting (module concatenation). temporal-polyfill
+    // (a node-ical dependency) calls BigInt() as a global. Webpack's
+    // ModuleConcatenationPlugin inlines modules into a shared scope where
+    // the global reference gets broken — producing "r.BigInt is not a function".
+    concatenateModules: false,
+    minimizer: [
+      new TerserPlugin({
+        terserOptions: {
+          compress: {
+            // Don't collapse variables that reference globals
+            toplevel: false,
+          },
+        },
+      }),
+    ],
   },
 };
