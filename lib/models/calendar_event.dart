@@ -15,6 +15,7 @@ class NormalizedEvent {
   final String? organizer;
   final ResponseStatus responseStatus;
   final String? bodyPreview;
+  final bool isPrivate;
 
   NormalizedEvent({
     required this.id,
@@ -30,6 +31,7 @@ class NormalizedEvent {
     this.organizer,
     this.responseStatus = ResponseStatus.none,
     this.bodyPreview,
+    this.isPrivate = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -46,6 +48,7 @@ class NormalizedEvent {
     'organizer': organizer,
     'responseStatus': responseStatus.name,
     'bodyPreview': bodyPreview,
+    'isPrivate': isPrivate,
   };
 
   factory NormalizedEvent.fromJson(Map<String, dynamic> json) => NormalizedEvent(
@@ -64,6 +67,7 @@ class NormalizedEvent {
     organizer: json['organizer'] as String?,
     responseStatus: ResponseStatus.values.byName(json['responseStatus'] as String? ?? 'none'),
     bodyPreview: json['bodyPreview'] as String?,
+    isPrivate: json['isPrivate'] as bool? ?? false,
   );
 }
 

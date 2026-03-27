@@ -116,7 +116,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
                 final now = DateTime.now();
                 final missingCount = dayEvents.where((e) =>
-                    DateTime.parse(e.end).isBefore(now) && !notedEventIds.contains(e.id)).length;
+                    !e.isPrivate &&
+                    DateTime.parse(e.end).isBefore(now) &&
+                    !notedEventIds.contains(e.id)).length;
 
                 if (dayEvents.isEmpty) {
                   return Center(
@@ -193,136 +195,166 @@ class _EventCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final calColor = accountColor(event.accountId);
-    final borderColor = isMissing ? CatppuccinMocha.yellow : calColor;
+    final calColor = event.isPrivate
+        ? CatppuccinMocha.overlay0
+        : accountColor(event.accountId);
+    final borderColor = event.isPrivate
+        ? CatppuccinMocha.overlay0.withValues(alpha: 0.4)
+        : isMissing ? CatppuccinMocha.yellow : calColor;
     final timeFormat = DateFormat('h:mm a');
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: CatppuccinMocha.surface0,
-        borderRadius: BorderRadius.circular(8),
-        border: Border(left: BorderSide(color: borderColor, width: 4)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Title row
-          Row(
-            children: [
-              Text(
-                _statusDots[status]!,
-                style: TextStyle(color: _statusColors[status], fontSize: 12),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  event.title,
-                  style: const TextStyle(fontWeight: FontWeight.w600, color: CatppuccinMocha.text),
-                ),
-              ),
-              if (isMissing)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: CatppuccinMocha.yellow.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
+    return Opacity(
+      opacity: event.isPrivate ? 0.55 : 1.0,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: CatppuccinMocha.surface0,
+          borderRadius: BorderRadius.circular(8),
+          border: Border(left: BorderSide(color: borderColor, width: 4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Title row
+            Row(
+              children: [
+                if (event.isPrivate)
+                  const Icon(Icons.lock_outline, size: 13, color: CatppuccinMocha.overlay0)
+                else
+                  Text(
+                    _statusDots[status]!,
+                    style: TextStyle(color: _statusColors[status], fontSize: 12),
                   ),
-                  child: const Text(
-                    'NOTE MISSING',
-                    style: TextStyle(color: CatppuccinMocha.yellow, fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    event.title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: event.isPrivate ? CatppuccinMocha.overlay0 : CatppuccinMocha.text,
+                      fontStyle: event.isPrivate ? FontStyle.italic : FontStyle.normal,
+                    ),
                   ),
                 ),
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(
-                  color: calColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: calColor.withValues(alpha: 0.3)),
-                ),
-                child: Text(
-                  event.provider == CalendarProvider.microsoft ? 'MS' :
-                  event.provider == CalendarProvider.google ? 'G' : 'ICS',
-                  style: TextStyle(color: calColor, fontSize: 11, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
+                if (!event.isPrivate && isMissing)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: CatppuccinMocha.yellow.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'NOTE MISSING',
+                      style: TextStyle(color: CatppuccinMocha.yellow, fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+                    ),
+                  ),
+                const SizedBox(width: 6),
+                if (event.isPrivate)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: CatppuccinMocha.overlay0.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: CatppuccinMocha.overlay0.withValues(alpha: 0.3)),
+                    ),
+                    child: const Text(
+                      'PRIVATE',
+                      style: TextStyle(color: CatppuccinMocha.overlay0, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+                    ),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: calColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: calColor.withValues(alpha: 0.3)),
+                    ),
+                    child: Text(
+                      event.provider == CalendarProvider.microsoft ? 'MS' :
+                      event.provider == CalendarProvider.google ? 'G' : 'ICS',
+                      style: TextStyle(color: calColor, fontSize: 11, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
 
-          // Time + attendees
-          Row(
-            children: [
-              Text(
-                '${timeFormat.format(DateTime.parse(event.start))} \u2013 ${timeFormat.format(DateTime.parse(event.end))}',
-                style: const TextStyle(color: CatppuccinMocha.subtext0, fontSize: 13),
-              ),
-              if (event.attendees.length > 1)
+            // Time row
+            Row(
+              children: [
                 Text(
-                  ' \u00B7 ${event.attendees.length} attendees',
+                  '${timeFormat.format(DateTime.parse(event.start))} \u2013 ${timeFormat.format(DateTime.parse(event.end))}',
                   style: const TextStyle(color: CatppuccinMocha.subtext0, fontSize: 13),
                 ),
-              if (event.isOnlineMeeting)
-                Container(
-                  margin: const EdgeInsets.only(left: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: CatppuccinMocha.blue.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text('Online', style: TextStyle(color: CatppuccinMocha.blue, fontSize: 11)),
-                ),
-            ],
-          ),
-
-          if (event.location != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              event.location!,
-              style: const TextStyle(color: CatppuccinMocha.overlay0, fontSize: 12),
-            ),
-          ],
-
-          // Note action row for past events
-          if (status == 'past') ...[
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (hasNote)
-                  const Text('\u2713 Note saved', style: TextStyle(color: CatppuccinMocha.green, fontSize: 12))
-                else ...[
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 14),
-                    color: CatppuccinMocha.overlay0,
-                    tooltip: 'Dismiss reminder',
-                    constraints: const BoxConstraints(),
-                    padding: EdgeInsets.zero,
-                    onPressed: () =>
-                        ref.read(dismissedMeetingsProvider.notifier).dismiss(event.id),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton(
-                    onPressed: () => showDialog(
-                      context: context,
-                      builder: (_) => QuickNoteDialog(event: event),
+                if (!event.isPrivate) ...[
+                  if (event.attendees.length > 1)
+                    Text(
+                      ' \u00B7 ${event.attendees.length} attendees',
+                      style: const TextStyle(color: CatppuccinMocha.subtext0, fontSize: 13),
                     ),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: CatppuccinMocha.yellow.withValues(alpha: 0.4)),
-                      foregroundColor: CatppuccinMocha.yellow,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      minimumSize: Size.zero,
-                      textStyle: const TextStyle(fontSize: 12),
+                  if (event.isOnlineMeeting)
+                    Container(
+                      margin: const EdgeInsets.only(left: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: CatppuccinMocha.blue.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text('Online', style: TextStyle(color: CatppuccinMocha.blue, fontSize: 11)),
                     ),
-                    child: const Text('+ Add Notes'),
-                  ),
                 ],
               ],
             ),
+
+            if (!event.isPrivate && event.location != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                event.location!,
+                style: const TextStyle(color: CatppuccinMocha.overlay0, fontSize: 12),
+              ),
+            ],
+
+            // Note action row — hidden for private events
+            if (!event.isPrivate && status == 'past') ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (hasNote)
+                    const Text('\u2713 Note saved', style: TextStyle(color: CatppuccinMocha.green, fontSize: 12))
+                  else ...[
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 14),
+                      color: CatppuccinMocha.overlay0,
+                      tooltip: 'Dismiss reminder',
+                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
+                      onPressed: () =>
+                          ref.read(dismissedMeetingsProvider.notifier).dismiss(event.id),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: () => showDialog(
+                        context: context,
+                        builder: (_) => QuickNoteDialog(event: event),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: CatppuccinMocha.yellow.withValues(alpha: 0.4)),
+                        foregroundColor: CatppuccinMocha.yellow,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        minimumSize: Size.zero,
+                        textStyle: const TextStyle(fontSize: 12),
+                      ),
+                      child: const Text('+ Add Notes'),
+                    ),
+                  ],
+                ],
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

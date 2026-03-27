@@ -59,7 +59,15 @@ class IcsCalendarService {
 
   NormalizedEvent? _buildEvent(Map<String, String> props, List<String> attendeeLines, String accountId) {
     final uid = props['UID'];
-    final summary = props['SUMMARY'] ?? '(No title)';
+    final rawSummary = props['SUMMARY'] ?? '(No title)';
+    final classValue = (props['CLASS'] ?? '').toUpperCase();
+    // An event is private if CLASS:PRIVATE/CONFIDENTIAL, or if the server
+    // has already masked the title to the standard "Private Appointment" string.
+    final isPrivate = classValue == 'PRIVATE' ||
+        classValue == 'CONFIDENTIAL' ||
+        rawSummary.trim().toLowerCase() == 'private appointment' ||
+        rawSummary.trim().toLowerCase() == 'private';
+    final summary = isPrivate ? 'Private' : rawSummary;
     final dtStart = _parseDateTime(props, 'DTSTART');
     final dtEnd = _parseDateTime(props, 'DTEND');
 
@@ -98,12 +106,13 @@ class IcsCalendarService {
       title: summary,
       start: dtStart.toIso8601String(),
       end: dtEnd.toIso8601String(),
-      location: location,
-      isOnlineMeeting: isOnline,
-      onlineMeetingUrl: meetingUrl,
-      attendees: attendees,
-      organizer: organizerEmail,
-      bodyPreview: description,
+      location: isPrivate ? null : location,
+      isOnlineMeeting: isPrivate ? false : isOnline,
+      onlineMeetingUrl: isPrivate ? null : meetingUrl,
+      attendees: isPrivate ? [] : attendees,
+      organizer: isPrivate ? null : organizerEmail,
+      bodyPreview: isPrivate ? null : description,
+      isPrivate: isPrivate,
     );
   }
 
