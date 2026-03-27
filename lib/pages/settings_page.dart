@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:launch_at_startup/launch_at_startup.dart';
 import '../core/theme/catppuccin_mocha.dart';
 import '../providers/app_providers.dart';
+import '../models/settings.dart';
 import '../services/storage/app_database.dart';
 import '../services/auth/token_store.dart';
 
@@ -93,6 +94,77 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               const SizedBox(width: 8),
               ElevatedButton(onPressed: _saveApiKey, child: const Text('Save')),
             ],
+          ),
+          const SizedBox(height: 24),
+          const Divider(),
+          const SizedBox(height: 16),
+
+          // Claude Model
+          const Text('Claude Model', style: TextStyle(fontWeight: FontWeight.w600, color: CatppuccinMocha.text)),
+          const SizedBox(height: 4),
+          const Text(
+            'Select the model used for AI-powered action item extraction.',
+            style: TextStyle(fontSize: 13, color: CatppuccinMocha.overlay0),
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            value: kClaudeModels.any((m) => m.id == settings.claudeModelId)
+                ? settings.claudeModelId
+                : kDefaultClaudeModelId,
+            dropdownColor: CatppuccinMocha.surface0,
+            style: const TextStyle(color: CatppuccinMocha.text, fontSize: 14),
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              fillColor: CatppuccinMocha.surface0,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: CatppuccinMocha.surface2),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: CatppuccinMocha.surface2),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: CatppuccinMocha.mauve),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            items: kClaudeModels.map((model) {
+              final tierColor = model.tier == 'Opus'
+                  ? CatppuccinMocha.mauve
+                  : model.tier == 'Sonnet'
+                      ? CatppuccinMocha.blue
+                      : CatppuccinMocha.teal;
+              return DropdownMenuItem(
+                value: model.id,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: tierColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        model.tier,
+                        style: TextStyle(color: tierColor, fontSize: 11, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(model.label, style: const TextStyle(color: CatppuccinMocha.text)),
+                  ],
+                ),
+              );
+            }).toList(),
+            onChanged: (val) {
+              if (val == null) return;
+              ref.read(settingsProvider.notifier).update(
+                settings.copyWith(claudeModelId: val),
+              );
+              ref.invalidate(claudeClientProvider);
+            },
           ),
           const SizedBox(height: 24),
           const Divider(),

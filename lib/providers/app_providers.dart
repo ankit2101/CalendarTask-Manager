@@ -144,11 +144,13 @@ class TodosNotifier extends StateNotifier<List<TodoTask>> {
   void reload() => _load();
 }
 
-// Claude AI client — loads API key from secure storage on creation
+// Claude AI client — loads API key + selected model from storage on creation
 final claudeClientProvider = FutureProvider<ClaudeClient>((ref) async {
   final client = ClaudeClient();
   final key = await TokenStore.instance.loadSecret('claude-api-key');
   if (key != null && key.isNotEmpty) client.setApiKey(key);
+  final db = await AppDatabase.getInstance();
+  client.setModel(db.getSettings().claudeModelId);
   return client;
 });
 

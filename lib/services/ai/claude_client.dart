@@ -12,9 +12,14 @@ class ClaudeClient {
   ));
 
   String? _apiKey;
+  String _modelId = 'claude-sonnet-4-20250514';
 
   void setApiKey(String key) {
     _apiKey = key;
+  }
+
+  void setModel(String modelId) {
+    _modelId = modelId;
   }
 
   Future<List<ActionItem>> extractActionItems(String note, NormalizedEvent event) async {
@@ -41,7 +46,7 @@ Return ONLY the JSON array, no other text.''';
       '/v1/messages',
       options: Options(headers: {'x-api-key': _apiKey}),
       data: {
-        'model': 'claude-sonnet-4-20250514',
+        'model': _modelId,
         'max_tokens': 1024,
         'messages': [
           {'role': 'user', 'content': prompt}
