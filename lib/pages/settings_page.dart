@@ -38,6 +38,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     } else {
       await TokenStore.instance.saveSecret('claude-api-key', key);
     }
+    // Force claudeClientProvider to reinitialize with the new key
+    ref.invalidate(claudeClientProvider);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('API key saved')),
