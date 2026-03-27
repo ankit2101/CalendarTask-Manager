@@ -7,11 +7,11 @@ class ClaudeModel {
 }
 
 const kClaudeModels = [
-  ClaudeModel(id: 'claude-opus-4-5',             label: 'Claude Opus 4.5',       tier: 'Opus'),
-  ClaudeModel(id: 'claude-sonnet-4-5',           label: 'Claude Sonnet 4.5',     tier: 'Sonnet'),
+  ClaudeModel(id: 'claude-opus-4-5-20251101',    label: 'Claude Opus 4.5',       tier: 'Opus'),
+  ClaudeModel(id: 'claude-sonnet-4-5-20251115',  label: 'Claude Sonnet 4.5',     tier: 'Sonnet'),
   ClaudeModel(id: 'claude-sonnet-4-20250514',    label: 'Claude Sonnet 4',       tier: 'Sonnet'),
   ClaudeModel(id: 'claude-3-5-sonnet-20241022',  label: 'Claude 3.5 Sonnet',     tier: 'Sonnet'),
-  ClaudeModel(id: 'claude-haiku-3-5-20241022',   label: 'Claude 3.5 Haiku',      tier: 'Haiku'),
+  ClaudeModel(id: 'claude-3-5-haiku-20241022',   label: 'Claude 3.5 Haiku',      tier: 'Haiku'),
   ClaudeModel(id: 'claude-3-haiku-20240307',     label: 'Claude 3 Haiku',        tier: 'Haiku'),
 ];
 

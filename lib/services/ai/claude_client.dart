@@ -42,30 +42,42 @@ Extract action items from these notes. Return a JSON array where each item has:
 
 Return ONLY the JSON array, no other text.''';
 
-    final response = await _dio.post(
-      '/v1/messages',
-      options: Options(headers: {'x-api-key': _apiKey}),
-      data: {
-        'model': _modelId,
-        'max_tokens': 1024,
-        'messages': [
-          {'role': 'user', 'content': prompt}
-        ],
-      },
-    );
-
-    final content = response.data['content'][0]['text'] as String;
-    // Strip markdown fences if present
-    final cleaned = content.replaceAll(RegExp(r'```json?\n?'), '').replaceAll('```', '').trim();
-    final items = jsonDecode(cleaned) as List<dynamic>;
-
-    return items.asMap().entries.map((entry) {
-      final item = entry.value as Map<String, dynamic>;
-      return ActionItem(
-        id: 'ai-${entry.key}',
-        text: item['text'] as String,
-        assignee: item['assignee'] as String?,
+    try {
+      final response = await _dio.post(
+        '/v1/messages',
+        options: Options(headers: {'x-api-key': _apiKey}),
+        data: {
+          'model': _modelId,
+          'max_tokens': 1024,
+          'messages': [
+            {'role': 'user', 'content': prompt}
+          ],
+        },
       );
-    }).toList();
+
+        final content = response.data['content'][0]['text'] as String;
+      // Strip markdown fences if present
+      final cleaned = content.replaceAll(RegExp(r'```json?\n?'), '').replaceAll('```', '').trim();
+      final items = jsonDecode(cleaned) as List<dynamic>;
+
+      return items.asMap().entries.map((entry) {
+        final item = entry.value as Map<String, dynamic>;
+        return ActionItem(
+          id: 'ai-${entry.key}',
+          text: item['text'] as String,
+          assignee: item['assignee'] as String?,
+        );
+      }).toList();
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      if (status == 404) {
+        throw Exception('Model "$_modelId" not found (404). Please select a different model in Settings.');
+      } else if (status == 401) {
+        throw Exception('Invalid API key (401). Please check your Claude API key in Settings.');
+      } else if (status == 429) {
+        throw Exception('Rate limit exceeded (429). Please wait a moment and try again.');
+      }
+      throw Exception('API error $status: ${e.message}');
+    }
   }
 }
