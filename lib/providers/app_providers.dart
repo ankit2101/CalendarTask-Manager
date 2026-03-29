@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/calendar_event.dart';
 import '../models/todo_task.dart';
@@ -41,8 +42,18 @@ final eventsProvider = StateNotifierProvider<EventsNotifier, AsyncValue<List<Nor
 });
 
 class EventsNotifier extends StateNotifier<AsyncValue<List<NormalizedEvent>>> {
+  Timer? _autoRefreshTimer;
+
   EventsNotifier() : super(const AsyncValue.loading()) {
     refresh();
+    // Auto-refresh every 15 minutes so the calendar stays current
+    _autoRefreshTimer = Timer.periodic(const Duration(minutes: 15), (_) => refresh());
+  }
+
+  @override
+  void dispose() {
+    _autoRefreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> refresh() async {

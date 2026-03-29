@@ -7,7 +7,14 @@ class IcsCalendarService {
   Future<List<NormalizedEvent>> fetchEvents(String accountId, String url) async {
     // webcal:// is just http/https — normalize it
     final normalized = url.replaceFirst(RegExp(r'^webcal://', caseSensitive: false), 'https://');
-    final response = await _dio.get(normalized);
+    // Force no-cache so Refresh always fetches fresh data from the server
+    final response = await _dio.get(
+      normalized,
+      options: Options(headers: {
+        'Cache-Control': 'no-cache, no-store',
+        'Pragma': 'no-cache',
+      }),
+    );
     return parseIcs(response.data as String, accountId);
   }
 

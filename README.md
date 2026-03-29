@@ -23,6 +23,8 @@ Grab the latest `.dmg` from [Releases](https://github.com/ankit2101/CalendarTask
 - Live **IN PROGRESS** badge on meetings happening right now
 - Leave/OOO events (PTO, vacation, out of office) are automatically hidden
 - Private appointments shown with a 🔒 lock icon
+- **Auto-refresh** every 15 minutes — no manual action needed
+- **Dismiss** past meeting reminders with the × button
 
 ### ✏️ Meeting Notes
 - **+ Add Notes** button on every past meeting

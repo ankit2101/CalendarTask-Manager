@@ -36,6 +36,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final eventsAsync = ref.watch(eventsProvider);
     final history = ref.watch(meetingHistoryProvider);
     final notedEventIds = history.map((r) => r.eventId).toSet();
+    final dismissedIds = ref.watch(dismissedMeetingsProvider);
     final today = _startOfDay(DateTime.now());
     final isToday = _isSameDay(_selectedDate, today);
 
@@ -118,7 +119,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 final missingCount = dayEvents.where((e) =>
                     !e.isPrivate &&
                     DateTime.parse(e.end).isBefore(now) &&
-                    !notedEventIds.contains(e.id)).length;
+                    !notedEventIds.contains(e.id) &&
+                    !dismissedIds.contains(e.id)).length;
 
                 if (dayEvents.isEmpty) {
                   return Center(
@@ -159,7 +161,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       event: event,
                       status: _eventStatus(event),
                       hasNote: notedEventIds.contains(event.id),
-                      isMissing: DateTime.parse(event.end).isBefore(now) && !notedEventIds.contains(event.id),
+                      isMissing: DateTime.parse(event.end).isBefore(now) &&
+                          !notedEventIds.contains(event.id) &&
+                          !dismissedIds.contains(event.id),
+                      isDismissed: dismissedIds.contains(event.id),
                     )),
                   ],
                 );
@@ -177,12 +182,14 @@ class _EventCard extends ConsumerWidget {
   final String status;
   final bool hasNote;
   final bool isMissing;
+  final bool isDismissed;
 
   const _EventCard({
     required this.event,
     required this.status,
     required this.hasNote,
     required this.isMissing,
+    required this.isDismissed,
   });
 
   static const _statusColors = {
@@ -316,8 +323,8 @@ class _EventCard extends ConsumerWidget {
               ),
             ],
 
-            // Note action row — hidden for private events, shown for active & past
-            if (!event.isPrivate && (status == 'past' || status == 'active')) ...[
+            // Note action row — hidden for private/dismissed events, shown for active & past
+            if (!event.isPrivate && !isDismissed && (status == 'past' || status == 'active')) ...[
               const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
