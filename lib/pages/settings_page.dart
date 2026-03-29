@@ -232,14 +232,39 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 onPressed: () async {
                   final db = await AppDatabase.getInstance();
                   final data = db.exportData();
+                  final timestamp = DateTime.now()
+                      .toIso8601String()
+                      .replaceAll(':', '-')
+                      .substring(0, 19);
+                  final defaultName = 'calendartask-backup-$timestamp.json';
+
+                  // Let the user choose where to save
+                  final savePath = await FilePicker.platform.saveFile(
+                    dialogTitle: 'Save Backup',
+                    fileName: defaultName,
+                    allowedExtensions: ['json'],
+                    type: FileType.custom,
+                  );
+
+                  if (savePath == null) return; // user cancelled
+
+                  await File(savePath).writeAsString(data, flush: true);
+
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Exported ${data.length} bytes')),
+                      SnackBar(
+                        content: Text('Backup saved to $savePath'),
+                        duration: const Duration(seconds: 6),
+                        action: SnackBarAction(
+                          label: 'OK',
+                          onPressed: () {},
+                        ),
+                      ),
                     );
                   }
                 },
                 icon: const Icon(Icons.download, size: 16),
-                label: const Text('Export'),
+                label: const Text('Export Backup'),
               ),
               const SizedBox(width: 12),
               OutlinedButton.icon(
