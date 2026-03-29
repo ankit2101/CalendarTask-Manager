@@ -1,104 +1,185 @@
 # CalendarTask Manager
 
-A macOS menu bar app that connects your calendars, captures meeting notes with AI-extracted action items, and keeps your to-do list in one place.
+A native macOS app (Flutter) that connects your calendars, captures meeting notes with AI-extracted action items, and keeps your to-do list in one place.
+
+---
+
+## Download
+
+Grab the latest `.dmg` from [Releases](https://github.com/ankit2101/CalendarTask-Manager/releases).
+
+1. Open the DMG and drag **CalendarTask Manager** to your Applications folder
+2. First launch: **right-click → Open** to bypass Gatekeeper
+3. If macOS blocks it entirely, run: `xattr -cr /Applications/calendar_task_manager.app`
 
 ---
 
 ## Features
 
 ### 📅 Calendar
-- Connect **Google Calendar**, **Microsoft Outlook**, and **ICS feeds**
+- Connect **Google Calendar**, **Microsoft Outlook**, and **ICS / Webcal feeds**
 - View events across all accounts in a single daily view
 - Navigate forward and backward through dates
-- Each calendar account gets a distinct color
-- Leave/OOO events (PTO, vacation, out of office, etc.) are automatically hidden
-- Refresh pulls the latest events from all connected accounts
+- Live **IN PROGRESS** badge on meetings happening right now
+- Leave/OOO events (PTO, vacation, out of office) are automatically hidden
+- Private appointments shown with a 🔒 lock icon
 
 ### ✏️ Meeting Notes
-- **Add Notes** button on every past meeting — works even if the app wasn't running when the meeting ended
+- **+ Add Notes** button on every past meeting
+- **+ Live Notes** button on meetings happening right now
+- Edit saved notes at any time from the **Notes** tab
 - Claude AI extracts action items from your notes automatically
-- Review and edit extracted items before saving (set priority, due date)
-- Meetings missing notes are highlighted in amber so nothing slips through
-- Notes are searchable from the **Notes** tab
+- Review, edit, add, or delete action items before saving
+- Re-extract action items after editing a note
 
 ### ✅ To-Do Board
-- Three buckets: **Pending**, **In Progress**, **Completed**
-- Priority scale 1–5 (default 3); tasks older than 2 days auto-escalate in priority
-- Set priority manually to lock it and stop auto-escalation
-- Action items extracted from meeting notes are added automatically as Pending tasks, tagged with the meeting name and date
+- Three states: **To-Do → In Progress → Completed**
+- Edit task title, description, and priority inline
+- Each task card shows the **source meeting name** and **created date**
+- Action items from meeting notes land here automatically
 
-### 💾 Backup & Restore
-- Configure a local folder in Settings
-- Backup file (`caltask-backup.json`) is created immediately and updated automatically on every change
-- One-click restore from backup if something goes wrong
-
-### 🗂 Microsoft Planner Integration
-- Push extracted action items directly to a Planner plan/bucket
-- Requires a Microsoft Azure app registration (see setup below)
+### 🤖 Claude AI
+- Choose your Claude model in **Settings**:
+  - `claude-opus-4-20250514`
+  - `claude-sonnet-4-20250514`
+  - `claude-3-5-sonnet-20241022`
+  - `claude-3-5-haiku-20241022`
+  - `claude-3-haiku-20240307`
+- Model change takes effect immediately — no restart needed
 
 ---
 
 ## Requirements
 
-- macOS
-- Node.js 18+
-- A [Claude API key](https://console.anthropic.com/) for AI note extraction
+- macOS 10.13+
+- A [Claude API key](https://console.anthropic.com/)
 
 ---
 
 ## Setup
 
-### 1. Install dependencies
+### 1. Install the app
 
-```bash
-npm install
-```
+Download `CalendarTaskManager.dmg` from [Releases](https://github.com/ankit2101/CalendarTask-Manager/releases) and drag to Applications.
 
-### 2. Start in development mode
+### 2. Add your Claude API key
 
-```bash
-npm start
-```
+Open the app → **Settings** → paste your API key → **Save**.
 
-### 3. Configure credentials (Settings tab)
+### 3. Connect your calendar
 
-| Field | Where to get it |
-|---|---|
-| **Claude API Key** | [console.anthropic.com](https://console.anthropic.com/) |
-| **Google OAuth Client ID / Secret** | [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials → OAuth 2.0 Client (Desktop app). Enable the **Google Calendar API**. |
-| **Microsoft Azure Client ID** | [portal.azure.com](https://portal.azure.com) → Azure Active Directory → App registrations → New registration. Add redirect URI `http://localhost` (Mobile/Desktop). Grant permissions: `Calendars.Read`, `Tasks.ReadWrite`, `User.Read`. |
-
-### 4. Add calendar accounts
-
-Go to the **Accounts** tab and connect your Google or Microsoft accounts. ICS feeds can be added with a public `.ics` URL.
+Go to **Accounts** and choose one of the options below.
 
 ---
 
-## Building
+## Connecting Calendars
 
-```bash
-# Package the app
-npm run package
+### Option A — ICS Feed (easiest, no OAuth needed)
 
-# Create a distributable (.dmg, .zip)
-npm run make
-```
+Both Google Calendar and Outlook support a private ICS URL that works without any OAuth setup.
+
+#### Google Calendar ICS
+
+1. Open [calendar.google.com](https://calendar.google.com)
+2. Click the **⚙ Settings** gear → **Settings**
+3. In the left sidebar, click the calendar you want (under "Settings for my calendars")
+4. Scroll down to **Secret address in iCal format**
+5. Copy the URL (starts with `https://calendar.google.com/calendar/ical/...`)
+6. In the app → **Accounts** → **ICS / Webcal** section → paste the URL → **Add**
+
+#### Microsoft Outlook / Office 365 ICS
+
+1. Open [outlook.office.com](https://outlook.office.com) or Outlook desktop
+2. Click the **Calendar** icon
+3. Click **Settings** (⚙) → **View all Outlook settings** → **Calendar** → **Shared calendars**
+4. Under **Publish a calendar**, select your calendar and permission level → **Publish**
+5. Copy the **ICS** link
+6. In the app → **Accounts** → **ICS / Webcal** section → paste the URL → **Add**
+
+> **iCloud Calendar ICS**
+> 1. Open the Calendar app on Mac
+> 2. Right-click a calendar → **Get Info** → check **Public Calendar**
+> 3. Copy the URL shown → paste into the ICS section of the app
 
 ---
 
-## Data Storage
+### Option B — Google OAuth (shows private events)
 
-All data is stored locally using `electron-store` (in `~/Library/Application Support/calendar-task-manager/`). You can configure an additional backup folder in **Settings → Data Storage & Backup** — the app writes `caltask-backup.json` there automatically after every change.
+Requires a one-time Google Cloud setup.
 
-### Backup format
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) → create a new project
+2. **APIs & Services** → **Library** → search **Google Calendar API** → **Enable**
+3. **APIs & Services** → **Credentials** → **+ Create Credentials** → **OAuth client ID**
+4. Configure the OAuth consent screen if prompted (External, add your email as test user)
+5. Application type: **macOS** (or Desktop app) → **Create**
+6. Download the credentials → save as `GoogleService-Info.plist`
+7. Place the file in `macos/Runner/` and add the reversed client ID URL scheme to `macos/Runner/Info.plist`:
 
-```json
-{
-  "version": 1,
-  "exportedAt": "2026-03-26T14:00:00.000Z",
-  "meetingHistory": [...],
-  "todoTasks": [...]
-}
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>com.googleusercontent.apps.YOUR_CLIENT_ID</string>
+    </array>
+  </dict>
+</array>
+```
+
+8. Rebuild: `flutter run -d macos`
+9. In the app → **Accounts** → **Add Google Account**
+
+---
+
+### Option C — Microsoft OAuth (shows private events)
+
+1. Go to [portal.azure.com](https://portal.azure.com) → **Azure Active Directory** → **App registrations** → **New registration**
+2. Platform: **Mobile and desktop applications**
+3. Redirect URI: `msauth.com.example.calendartaskmanager://auth`
+4. Under **API permissions** → add: `Calendars.Read`, `User.Read`
+5. Copy the **Application (client) ID**
+6. Paste it into `lib/services/calendar/microsoft_calendar_service.dart` at the `_microsoftClientId` constant
+7. Rebuild: `flutter run -d macos`
+8. In the app → **Accounts** → **Add Microsoft Account**
+
+---
+
+## Building from Source
+
+### Prerequisites
+
+```bash
+# Install Flutter
+brew install flutter
+
+# Install CocoaPods
+brew install cocoapods
+```
+
+### Run in development
+
+```bash
+git clone https://github.com/ankit2101/CalendarTask-Manager.git
+cd CalendarTask-Manager
+flutter pub get
+cd macos && pod install && cd ..
+flutter run -d macos
+```
+
+### Build a release DMG
+
+```bash
+flutter build macos --release
+brew install create-dmg
+create-dmg \
+  --volname "CalendarTask Manager" \
+  --window-size 600 400 \
+  --icon-size 100 \
+  --icon "calendar_task_manager.app" 150 185 \
+  --app-drop-link 450 185 \
+  "dist/CalendarTaskManager.dmg" \
+  "build/macos/Build/Products/Release/"
 ```
 
 ---
@@ -107,16 +188,14 @@ All data is stored locally using `electron-store` (in `~/Library/Application Sup
 
 | Layer | Technology |
 |---|---|
-| Shell | Electron 41 |
-| UI | React 19, React Router 7 |
-| Language | TypeScript 5 |
-| Bundler | Webpack (via Electron Forge) |
-| Persistence | electron-store |
-| Secrets | macOS Keychain (keytar) |
-| AI | Anthropic Claude (`claude-opus-4-5`) |
-| Google auth | googleapis + OAuth 2.0 |
-| Microsoft auth | @azure/msal-node |
-| ICS parsing | node-ical |
+| Language | Dart / Flutter |
+| State management | Riverpod |
+| Persistence | SharedPreferences |
+| AI | Anthropic Claude API |
+| Google auth | google_sign_in |
+| Microsoft auth | MSAL (via http) |
+| ICS parsing | ical_parser |
+| HTTP | Dio |
 | Theme | Catppuccin Mocha |
 
 ---
@@ -124,31 +203,41 @@ All data is stored locally using `electron-store` (in `~/Library/Application Sup
 ## Project Structure
 
 ```
-src/
-├── main/                  # Electron main process
-│   ├── ipc/handlers.ts    # All IPC channel handlers
-│   ├── services/
-│   │   ├── ai/            # Claude API integration
-│   │   ├── auth/          # Google + Microsoft OAuth
-│   │   ├── calendar/      # Calendar fetching (Google, Outlook, ICS)
-│   │   ├── meeting/       # Meeting end detection
-│   │   └── planner/       # Microsoft Planner task creation
-│   ├── store/             # electron-store persistence + auto-export
-│   └── windows/           # Main window + Quick Note window
-├── renderer/              # React frontend
-│   ├── pages/
-│   │   ├── Dashboard.tsx  # Daily calendar view
-│   │   ├── Todos.tsx      # To-do board
-│   │   ├── History.tsx    # Meeting notes
-│   │   ├── Accounts.tsx   # Account management
-│   │   ├── Settings.tsx   # App settings + backup
-│   │   └── QuickNote.tsx  # Floating note capture window
-│   └── components/
-│       └── Layout.tsx     # Sidebar navigation
-├── shared/
-│   └── types/             # Shared TypeScript types
-└── preload.ts             # Context-bridged IPC API
+lib/
+├── app.dart                        # Root widget + router
+├── main.dart                       # App entry point
+├── models/                         # Data models (account, event, task, settings)
+├── pages/
+│   ├── dashboard_page.dart         # Daily calendar view
+│   ├── todos_page.dart             # To-do board (To-Do / In Progress / Done)
+│   ├── notes_page.dart             # Saved meeting notes + edit
+│   ├── accounts_page.dart          # Calendar account management
+│   └── settings_page.dart          # API key + model selector
+├── providers/
+│   └── app_providers.dart          # Riverpod providers
+├── services/
+│   ├── ai/claude_client.dart       # Anthropic API client
+│   ├── auth/token_store.dart       # API key persistence
+│   ├── calendar/
+│   │   ├── calendar_manager.dart   # Aggregates all calendar sources
+│   │   ├── google_calendar_service.dart
+│   │   ├── microsoft_calendar_service.dart
+│   │   └── ics_calendar_service.dart
+│   ├── meeting_poller.dart         # Live meeting detection
+│   └── storage/app_database.dart   # Local data persistence
+├── widgets/
+│   ├── app_scaffold.dart           # Sidebar + navigation
+│   └── quick_note_dialog.dart      # Meeting note capture dialog
+└── core/
+    ├── constants.dart              # Claude model list
+    └── theme/                      # Catppuccin Mocha theme
 ```
+
+---
+
+## Data Storage
+
+All data is stored locally in `~/Library/Application Support/com.caltask.calendar_task_manager/` via SharedPreferences. No data is sent to any server except the Claude API when extracting action items.
 
 ---
 
