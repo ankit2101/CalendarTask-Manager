@@ -93,6 +93,8 @@ class AccountsNotifier extends StateNotifier<List<CalendarAccount>> {
     await db.removeAccount(id);
     state = db.getAccounts();
   }
+
+  void reload() => _load();
 }
 
 // Meeting history
@@ -199,4 +201,6 @@ class DismissedMeetingsNotifier extends StateNotifier<Set<String>> {
     await db.dismissMeeting(eventId);
     state = {...state, eventId};
   }
+
+  void reload() => _load();
 }

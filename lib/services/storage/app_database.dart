@@ -1,14 +1,21 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/calendar_event.dart';
 import '../../models/account.dart';
 import '../../models/todo_task.dart';
 import '../../models/settings.dart';
 
+const _kDataDirKey = 'dataDirectoryPath';
+const _kDataFileName = 'calendartask_data.json';
+
 class AppDatabase {
   static AppDatabase? _instance;
   static Future<AppDatabase>? _initFuture;
   late SharedPreferences _prefs;
+  late Map<String, dynamic> _data;
+  late String _dataFilePath;
 
   AppDatabase._();
 
@@ -20,11 +27,86 @@ class AppDatabase {
   static Future<AppDatabase> _create() async {
     final db = AppDatabase._();
     db._prefs = await SharedPreferences.getInstance();
+    db._dataFilePath = await _resolveDataFilePath(db._prefs);
+    await db._loadData();
     _instance = db;
     return db;
   }
 
-  // Settings
+  static Future<String> _resolveDataFilePath(SharedPreferences prefs) async {
+    String? dir = prefs.getString(_kDataDirKey);
+    if (dir == null) {
+      final appSupport = await getApplicationSupportDirectory();
+      dir = appSupport.path;
+      await prefs.setString(_kDataDirKey, dir);
+    }
+    return '$dir/$_kDataFileName';
+  }
+
+  Future<void> _loadData() async {
+    final file = File(_dataFilePath);
+    if (file.existsSync()) {
+      try {
+        final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+        _data = json;
+        return;
+      } catch (_) {
+        // Fall through to migration if file is corrupt
+      }
+    }
+    await _migrateFromPrefs();
+  }
+
+  Future<void> _migrateFromPrefs() async {
+    _data = {};
+    for (final key in ['accounts', 'meetingHistory', 'todos', 'dismissedMeetings']) {
+      final val = _prefs.getString(key);
+      if (val != null) {
+        _data[key] = jsonDecode(val);
+      }
+    }
+    await _save();
+    // Clean up SharedPreferences after migration
+    for (final key in ['accounts', 'meetingHistory', 'todos', 'dismissedMeetings']) {
+      await _prefs.remove(key);
+    }
+  }
+
+  Future<void> _save() async {
+    await File(_dataFilePath).writeAsString(jsonEncode(_data), flush: true);
+  }
+
+  // --- Static helpers for data directory management ---
+
+  static Future<String> getDataDirectoryPath() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? dir = prefs.getString(_kDataDirKey);
+    if (dir == null) {
+      final appSupport = await getApplicationSupportDirectory();
+      dir = appSupport.path;
+    }
+    return dir;
+  }
+
+  static Future<void> changeDataDirectory(String newDir) async {
+    // Write current data to new location
+    final prefs = await SharedPreferences.getInstance();
+    final inst = _instance;
+    if (inst != null) {
+      final newPath = '$newDir/$_kDataFileName';
+      await File(newPath).writeAsString(jsonEncode(inst._data), flush: true);
+    }
+    await prefs.setString(_kDataDirKey, newDir);
+    resetInstance();
+  }
+
+  static void resetInstance() {
+    _initFuture = null;
+    _instance = null;
+  }
+
+  // --- Settings (remain in SharedPreferences) ---
+
   AppSettings getSettings() {
     final json = _prefs.getString('settings');
     if (json == null) return const AppSettings();
@@ -35,11 +117,11 @@ class AppDatabase {
     await _prefs.setString('settings', jsonEncode(settings.toJson()));
   }
 
-  // Accounts
+  // --- Accounts ---
+
   List<CalendarAccount> getAccounts() {
-    final json = _prefs.getString('accounts');
-    if (json == null) return [];
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _data['accounts'] as List<dynamic>?;
+    if (list == null) return [];
     return list.map((e) => CalendarAccount.fromJson(e as Map<String, dynamic>)).toList();
   }
 
@@ -51,20 +133,22 @@ class AppDatabase {
     final accounts = getAccounts();
     accounts.removeWhere((a) => a.id == account.id);
     accounts.add(account);
-    await _prefs.setString('accounts', jsonEncode(accounts.map((a) => a.toJson()).toList()));
+    _data['accounts'] = accounts.map((a) => a.toJson()).toList();
+    await _save();
   }
 
   Future<void> removeAccount(String id) async {
     final accounts = getAccounts();
     accounts.removeWhere((a) => a.id == id);
-    await _prefs.setString('accounts', jsonEncode(accounts.map((a) => a.toJson()).toList()));
+    _data['accounts'] = accounts.map((a) => a.toJson()).toList();
+    await _save();
   }
 
-  // Meeting history
+  // --- Meeting history ---
+
   List<MeetingRecord> getMeetingHistory() {
-    final json = _prefs.getString('meetingHistory');
-    if (json == null) return [];
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _data['meetingHistory'] as List<dynamic>?;
+    if (list == null) return [];
     return list.map((e) => MeetingRecord.fromJson(e as Map<String, dynamic>)).toList();
   }
 
@@ -72,46 +156,52 @@ class AppDatabase {
     final history = getMeetingHistory();
     history.removeWhere((r) => r.eventId == record.eventId);
     history.add(record);
-    await _prefs.setString('meetingHistory', jsonEncode(history.map((r) => r.toJson()).toList()));
+    _data['meetingHistory'] = history.map((r) => r.toJson()).toList();
+    await _save();
   }
 
   Future<void> deleteMeetingRecord(String eventId) async {
     final history = getMeetingHistory();
     history.removeWhere((r) => r.eventId == eventId);
-    await _prefs.setString('meetingHistory', jsonEncode(history.map((r) => r.toJson()).toList()));
+    _data['meetingHistory'] = history.map((r) => r.toJson()).toList();
+    await _save();
   }
 
   Future<void> deleteTodosByMeetingId(String meetingEventId) async {
     final todos = getTodos();
     todos.removeWhere((t) => t.meetingEventId == meetingEventId);
-    await _prefs.setString('todos', jsonEncode(todos.map((t) => t.toJson()).toList()));
+    _data['todos'] = todos.map((t) => t.toJson()).toList();
+    await _save();
   }
 
-  // Dismissed meetings
+  // --- Dismissed meetings ---
+
   Set<String> getDismissedMeetings() {
-    final json = _prefs.getString('dismissedMeetings');
-    if (json == null) return {};
-    return (jsonDecode(json) as List<dynamic>).cast<String>().toSet();
+    final list = _data['dismissedMeetings'] as List<dynamic>?;
+    if (list == null) return {};
+    return list.cast<String>().toSet();
   }
 
   Future<void> dismissMeeting(String eventId) async {
     final dismissed = getDismissedMeetings();
     dismissed.add(eventId);
-    await _prefs.setString('dismissedMeetings', jsonEncode(dismissed.toList()));
+    _data['dismissedMeetings'] = dismissed.toList();
+    await _save();
   }
 
-  // Todo tasks
+  // --- Todo tasks ---
+
   List<TodoTask> getTodos() {
-    final json = _prefs.getString('todos');
-    if (json == null) return [];
-    final list = jsonDecode(json) as List<dynamic>;
+    final list = _data['todos'] as List<dynamic>?;
+    if (list == null) return [];
     return list.map((e) => TodoTask.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Future<TodoTask> addTodo(TodoTask task) async {
     final todos = getTodos();
     todos.add(task);
-    await _prefs.setString('todos', jsonEncode(todos.map((t) => t.toJson()).toList()));
+    _data['todos'] = todos.map((t) => t.toJson()).toList();
+    await _save();
     return task;
   }
 
@@ -122,17 +212,20 @@ class AppDatabase {
     final existing = todos[index].toJson();
     existing.addAll(updates);
     todos[index] = TodoTask.fromJson(existing);
-    await _prefs.setString('todos', jsonEncode(todos.map((t) => t.toJson()).toList()));
+    _data['todos'] = todos.map((t) => t.toJson()).toList();
+    await _save();
     return todos[index];
   }
 
   Future<void> deleteTodo(String id) async {
     final todos = getTodos();
     todos.removeWhere((t) => t.id == id);
-    await _prefs.setString('todos', jsonEncode(todos.map((t) => t.toJson()).toList()));
+    _data['todos'] = todos.map((t) => t.toJson()).toList();
+    await _save();
   }
 
-  // Export/Import
+  // --- Export / Import ---
+
   String exportData() {
     return jsonEncode({
       'meetingHistory': getMeetingHistory().map((r) => r.toJson()).toList(),
@@ -144,11 +237,12 @@ class AppDatabase {
   Future<Map<String, dynamic>> importData(String jsonStr) async {
     final data = jsonDecode(jsonStr) as Map<String, dynamic>;
     if (data.containsKey('meetingHistory')) {
-      await _prefs.setString('meetingHistory', jsonEncode(data['meetingHistory']));
+      _data['meetingHistory'] = data['meetingHistory'];
     }
     if (data.containsKey('todos')) {
-      await _prefs.setString('todos', jsonEncode(data['todos']));
+      _data['todos'] = data['todos'];
     }
+    await _save();
     final history = (data['meetingHistory'] as List<dynamic>?)?.length ?? 0;
     final todos = (data['todos'] as List<dynamic>?)?.length ?? 0;
     return {

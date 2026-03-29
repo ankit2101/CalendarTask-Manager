@@ -20,11 +20,18 @@ class SettingsPage extends ConsumerStatefulWidget {
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   final _apiKeyController = TextEditingController();
   bool _apiKeyObscured = true;
+  String? _dataDirectory;
 
   @override
   void initState() {
     super.initState();
     _loadApiKey();
+    _loadDataDirectory();
+  }
+
+  Future<void> _loadDataDirectory() async {
+    final dir = await AppDatabase.getDataDirectoryPath();
+    if (mounted) setState(() => _dataDirectory = dir);
   }
 
   Future<void> _loadApiKey() async {
@@ -306,6 +313,62 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
 
           if (Platform.isMacOS) ...[
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 16),
+            const Text('Storage', style: TextStyle(fontWeight: FontWeight.w600, color: CatppuccinMocha.text)),
+            const SizedBox(height: 4),
+            const Text(
+              'Location where accounts, meeting history, and tasks are stored. Move to iCloud Drive or Dropbox to sync across Macs.',
+              style: TextStyle(fontSize: 13, color: CatppuccinMocha.overlay0),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: CatppuccinMocha.surface0,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: CatppuccinMocha.surface2),
+                    ),
+                    child: Text(
+                      _dataDirectory ?? '…',
+                      style: const TextStyle(fontSize: 13, color: CatppuccinMocha.text),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: () async {
+                    final picked = await FilePicker.platform.getDirectoryPath(
+                      dialogTitle: 'Choose Data File Location',
+                    );
+                    if (picked == null) return;
+                    await AppDatabase.changeDataDirectory(picked);
+                    setState(() => _dataDirectory = picked);
+                    // Reload all data providers from new location
+                    final db = await AppDatabase.getInstance();
+                    ref.read(settingsProvider.notifier).update(db.getSettings());
+                    ref.read(meetingHistoryProvider.notifier).reload();
+                    ref.read(todosProvider.notifier).reload();
+                    ref.read(accountsProvider.notifier).reload();
+                    ref.read(dismissedMeetingsProvider.notifier).reload();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Data location set to $picked'),
+                          duration: const Duration(seconds: 5),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('Choose Directory'),
+                ),
+              ],
+            ),
             const SizedBox(height: 24),
             const Divider(),
             const SizedBox(height: 16),
