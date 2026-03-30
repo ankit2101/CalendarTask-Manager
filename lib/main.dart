@@ -4,9 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:launch_at_startup/launch_at_startup.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'app.dart';
+import 'core/time_utils.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load the full IANA timezone database for DST-correct ICS timezone parsing
+  initTimezones();
 
   // Initialize launch-at-startup support (macOS)
   if (Platform.isMacOS) {

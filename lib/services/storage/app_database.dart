@@ -224,6 +224,28 @@ class AppDatabase {
     await _save();
   }
 
+  // --- Event timezone overrides ---
+
+  Map<String, String> getEventTimezoneOverrides() {
+    final map = _data['eventTimezoneOverrides'] as Map<String, dynamic>?;
+    if (map == null) return {};
+    return map.map((k, v) => MapEntry(k, v as String));
+  }
+
+  Future<void> setEventTimezoneOverride(String eventId, String tzid) async {
+    final overrides = getEventTimezoneOverrides();
+    overrides[eventId] = tzid;
+    _data['eventTimezoneOverrides'] = overrides;
+    await _save();
+  }
+
+  Future<void> clearEventTimezoneOverride(String eventId) async {
+    final overrides = getEventTimezoneOverrides();
+    overrides.remove(eventId);
+    _data['eventTimezoneOverrides'] = overrides;
+    await _save();
+  }
+
   // --- Export / Import ---
 
   String exportData() {

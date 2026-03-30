@@ -169,6 +169,37 @@ class TodosNotifier extends StateNotifier<List<TodoTask>> {
   void reload() => _load();
 }
 
+// Event timezone overrides
+final eventTimezoneOverridesProvider =
+    StateNotifierProvider<EventTimezoneOverridesNotifier, Map<String, String>>((ref) {
+  return EventTimezoneOverridesNotifier();
+});
+
+class EventTimezoneOverridesNotifier extends StateNotifier<Map<String, String>> {
+  EventTimezoneOverridesNotifier() : super({}) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final db = await AppDatabase.getInstance();
+    state = db.getEventTimezoneOverrides();
+  }
+
+  Future<void> setOverride(String eventId, String tzid) async {
+    final db = await AppDatabase.getInstance();
+    await db.setEventTimezoneOverride(eventId, tzid);
+    state = {...state, eventId: tzid};
+  }
+
+  Future<void> clearOverride(String eventId) async {
+    final db = await AppDatabase.getInstance();
+    await db.clearEventTimezoneOverride(eventId);
+    final updated = Map<String, String>.from(state);
+    updated.remove(eventId);
+    state = updated;
+  }
+}
+
 // Claude AI client — watches settingsProvider so model changes take effect
 // immediately without a race against the async DB write.
 final claudeClientProvider = FutureProvider<ClaudeClient>((ref) async {

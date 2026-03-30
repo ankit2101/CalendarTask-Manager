@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../core/theme/catppuccin_mocha.dart';
+import '../core/time_utils.dart';
 import '../models/calendar_event.dart';
 import '../models/todo_task.dart';
 import '../providers/app_providers.dart';
@@ -30,8 +31,8 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
 
   bool get _isActive {
     final now = DateTime.now();
-    final start = DateTime.parse(widget.event.start);
-    final end = DateTime.parse(widget.event.end);
+    final start = parseToLocal(widget.event.start);
+    final end = parseToLocal(widget.event.end);
     return now.isAfter(start) && now.isBefore(end);
   }
 
@@ -155,7 +156,7 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
     final event = widget.event;
     final timeFormat = DateFormat('h:mm a');
     final dateFormat = DateFormat('EEEE, MMMM d');
-    final start = DateTime.parse(event.start);
+    final start = parseToLocal(event.start);
     final canSave = _noteController.text.trim().isNotEmpty && !_isSaving;
     final canExtract = _noteController.text.trim().isNotEmpty && !_isExtracting;
 
@@ -230,7 +231,7 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
                     const SizedBox(height: 4),
                     Text(
                       '${dateFormat.format(start)}  ·  '
-                      '${timeFormat.format(start)} \u2013 ${timeFormat.format(DateTime.parse(event.end))}'
+                      '${timeFormat.format(start)} \u2013 ${timeFormat.format(parseToLocal(event.end))}'
                       '${event.attendees.length > 1 ? '  ·  ${event.attendees.length} attendees' : ''}',
                       style: const TextStyle(color: CatppuccinMocha.subtext0, fontSize: 13),
                     ),

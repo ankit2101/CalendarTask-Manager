@@ -1,7 +1,99 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
 import '../../models/calendar_event.dart';
+import '../../core/time_utils.dart';
 import '../auth/token_store.dart';
+
+/// Maps Windows timezone IDs (as returned by Microsoft Graph) to IANA timezone IDs.
+const Map<String, String> _windowsToIana = {
+  'AUS Central Standard Time':     'Australia/Darwin',
+  'AUS Eastern Standard Time':     'Australia/Sydney',
+  'Afghanistan Standard Time':     'Asia/Kabul',
+  'Alaskan Standard Time':         'America/Anchorage',
+  'Arab Standard Time':            'Asia/Riyadh',
+  'Arabian Standard Time':         'Asia/Dubai',
+  'Arabic Standard Time':          'Asia/Baghdad',
+  'Argentina Standard Time':       'America/Buenos_Aires',
+  'Atlantic Standard Time':        'America/Halifax',
+  'Azerbaijan Standard Time':      'Asia/Baku',
+  'Canada Central Standard Time':  'America/Regina',
+  'Cen. Australia Standard Time':  'Australia/Adelaide',
+  'Central America Standard Time': 'America/Guatemala',
+  'Central Asia Standard Time':    'Asia/Almaty',
+  'Central Europe Standard Time':  'Europe/Budapest',
+  'Central European Standard Time':'Europe/Warsaw',
+  'Central Pacific Standard Time': 'Pacific/Guadalcanal',
+  'Central Standard Time':         'America/Chicago',
+  'Central Standard Time (Mexico)':'America/Mexico_City',
+  'China Standard Time':           'Asia/Shanghai',
+  'E. Africa Standard Time':       'Africa/Nairobi',
+  'E. Australia Standard Time':    'Australia/Brisbane',
+  'E. Europe Standard Time':       'Asia/Nicosia',
+  'Eastern Standard Time':         'America/New_York',
+  'Eastern Standard Time (Mexico)':'America/Cancun',
+  'Egypt Standard Time':           'Africa/Cairo',
+  'FLE Standard Time':             'Europe/Kiev',
+  'GMT Standard Time':             'Europe/London',
+  'GTB Standard Time':             'Europe/Bucharest',
+  'Georgian Standard Time':        'Asia/Tbilisi',
+  'Greenland Standard Time':       'America/Godthab',
+  'Greenwich Standard Time':       'Atlantic/Reykjavik',
+  'Hawaii-Aleutian Standard Time': 'Pacific/Honolulu',
+  'India Standard Time':           'Asia/Calcutta',
+  'Iran Standard Time':            'Asia/Tehran',
+  'Israel Standard Time':          'Asia/Jerusalem',
+  'Jordan Standard Time':          'Asia/Amman',
+  'Korea Standard Time':           'Asia/Seoul',
+  'Mauritius Standard Time':       'Indian/Mauritius',
+  'Middle East Standard Time':     'Asia/Beirut',
+  'Morocco Standard Time':         'Africa/Casablanca',
+  'Mountain Standard Time':        'America/Denver',
+  'Mountain Standard Time (Mexico)':'America/Chihuahua',
+  'Myanmar Standard Time':         'Asia/Rangoon',
+  'N. Central Asia Standard Time': 'Asia/Novosibirsk',
+  'Namibia Standard Time':         'Africa/Windhoek',
+  'Nepal Standard Time':           'Asia/Katmandu',
+  'New Zealand Standard Time':     'Pacific/Auckland',
+  'Newfoundland Standard Time':    'America/St_Johns',
+  'North Asia East Standard Time': 'Asia/Irkutsk',
+  'North Asia Standard Time':      'Asia/Krasnoyarsk',
+  'Pacific SA Standard Time':      'America/Santiago',
+  'Pacific Standard Time':         'America/Los_Angeles',
+  'Pacific Standard Time (Mexico)':'America/Santa_Isabel',
+  'Romance Standard Time':         'Europe/Paris',
+  'Russia Time Zone 11':           'Asia/Kamchatka',
+  'Russia Time Zone 3':            'Europe/Samara',
+  'Russia Time Zone 9':            'Asia/Yakutsk',
+  'Russian Standard Time':         'Europe/Moscow',
+  'SA Eastern Standard Time':      'America/Cayenne',
+  'SA Pacific Standard Time':      'America/Bogota',
+  'SA Western Standard Time':      'America/La_Paz',
+  'SE Asia Standard Time':         'Asia/Bangkok',
+  'Singapore Standard Time':       'Asia/Singapore',
+  'South Africa Standard Time':    'Africa/Johannesburg',
+  'Sri Lanka Standard Time':       'Asia/Colombo',
+  'Syria Standard Time':           'Asia/Damascus',
+  'Taipei Standard Time':          'Asia/Taipei',
+  'Tasmania Standard Time':        'Australia/Hobart',
+  'Tokyo Standard Time':           'Asia/Tokyo',
+  'Tonga Standard Time':           'Pacific/Tongatapu',
+  'Turkey Standard Time':          'Europe/Istanbul',
+  'US Eastern Standard Time':      'America/Indianapolis',
+  'US Mountain Standard Time':     'America/Phoenix',
+  'UTC':                           'UTC',
+  'UTC+12':                        'Pacific/Fiji',
+  'UTC-02':                        'America/Noronha',
+  'UTC-11':                        'Pacific/Pago_Pago',
+  'Ulaanbaatar Standard Time':     'Asia/Ulaanbaatar',
+  'Venezuela Standard Time':       'America/Caracas',
+  'W. Australia Standard Time':    'Australia/Perth',
+  'W. Central Africa Standard Time':'Africa/Lagos',
+  'W. Europe Standard Time':       'Europe/Berlin',
+  'West Asia Standard Time':       'Asia/Tashkent',
+  'West Pacific Standard Time':    'Pacific/Port_Moresby',
+  'Yakutsk Standard Time':         'Asia/Yakutsk',
+};
 
 /// Microsoft Graph API calendar integration using PKCE OAuth 2.0.
 ///
@@ -86,7 +178,10 @@ class MicrosoftCalendarService {
 
     final response = await _dio.get(
       '/me/calendarView',
-      options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+      options: Options(headers: {
+        'Authorization': 'Bearer $accessToken',
+        'Prefer': 'outlook.timezone="UTC"',
+      }),
       queryParameters: {
         'startDateTime': startDateTime,
         'endDateTime': endDateTime,
@@ -138,10 +233,12 @@ class MicrosoftCalendarService {
     final startMap = json['start'] as Map<String, dynamic>?;
     final endMap = json['end'] as Map<String, dynamic>?;
 
-    // Graph returns dateTime without timezone info in Windows tz format
-    // Parse as-is and treat as local time
-    final startStr = startMap?['dateTime'] as String? ?? DateTime.now().toIso8601String();
-    final endStr = endMap?['dateTime'] as String? ?? DateTime.now().toIso8601String();
+    // Graph returns dateTime + timeZone. Even with Prefer: UTC, the timeZone field
+    // confirms the actual timezone — use it to convert correctly.
+    final startStr = _parseGraphDateTime(
+        startMap?['dateTime'] as String?, startMap?['timeZone'] as String?);
+    final endStr = _parseGraphDateTime(
+        endMap?['dateTime'] as String?, endMap?['timeZone'] as String?);
 
     final attendeesList = (json['attendees'] as List<dynamic>?) ?? [];
     final attendees = attendeesList.map((a) {
@@ -182,6 +279,40 @@ class MicrosoftCalendarService {
       responseStatus: _mapResponseStatus(selfResponse),
       bodyPreview: json['bodyPreview'] as String?,
     );
+  }
+
+  /// Converts a Graph API dateTime string + Windows/IANA timeZone ID to a UTC ISO 8601 string.
+  /// Graph returns naive strings like "2024-01-15T14:00:00.0000000" with a separate timeZone.
+  String _parseGraphDateTime(String? raw, String? windowsTzId) {
+    if (raw == null) return DateTime.now().toUtc().toIso8601String();
+
+    // Strip sub-second precision beyond 6 digits (Graph uses 7-digit fractional seconds)
+    final normalized = raw.replaceFirst(RegExp(r'\.(\d{6})\d+'), '.\$1');
+
+    // If the string already carries offset info, trust it directly
+    if (normalized.endsWith('Z') || normalized.contains('+') || normalized.contains('-', 10)) {
+      return DateTime.parse(normalized).toUtc().toIso8601String();
+    }
+
+    // Resolve timezone: try Windows ID → IANA, then try raw value as IANA directly
+    final ianaId = windowsTzId != null
+        ? (_windowsToIana[windowsTzId] ?? windowsTzId)
+        : null;
+
+    if (ianaId != null && ianaId != 'UTC') {
+      // Parse as a naive local time in the specified timezone
+      final dt = DateTime.parse('${normalized}Z'); // parse fields; Z discarded below
+      final utc = parseWithTzid(
+          dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, ianaId);
+      if (utc != null) return utc.toIso8601String();
+      debugPrint('[MS Calendar] Unknown IANA ID "$ianaId" (from "$windowsTzId") — treating as local time');
+      return DateTime(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second)
+          .toUtc()
+          .toIso8601String();
+    }
+
+    // UTC or no timezone info: treat as UTC
+    return DateTime.parse('${normalized}Z').toIso8601String();
   }
 
   ResponseStatus _mapResponseStatus(String status) {

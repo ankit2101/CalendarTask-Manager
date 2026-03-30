@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../../models/calendar_event.dart';
+import '../../core/time_utils.dart';
 
 class IcsCalendarService {
   final Dio _dio = Dio();
@@ -81,7 +83,7 @@ class IcsCalendarService {
     if (uid == null || dtStart == null || dtEnd == null) return null;
 
     // Filter: events within a 60-day window (30 days past → 30 days future)
-    final now = DateTime.now();
+    final now = DateTime.now().toUtc();
     final windowStart = now.subtract(const Duration(days: 30));
     final windowEnd = now.add(const Duration(days: 30));
     if (dtEnd.isBefore(windowStart) || dtStart.isAfter(windowEnd)) return null;
@@ -126,9 +128,11 @@ class IcsCalendarService {
   DateTime? _parseDateTime(Map<String, String> props, String key) {
     // Try to find the value with or without parameters
     String? value;
+    String? matchedKey;
     for (final entry in props.entries) {
       if (entry.key.startsWith(key)) {
         value = entry.value;
+        matchedKey = entry.key;
         break;
       }
     }
@@ -139,25 +143,38 @@ class IcsCalendarService {
 
     // Format: 20231215T140000Z or 20231215T140000
     if (value.length >= 15) {
-      final year = int.parse(value.substring(0, 4));
-      final month = int.parse(value.substring(4, 6));
-      final day = int.parse(value.substring(6, 8));
-      final hour = int.parse(value.substring(9, 11));
+      final year   = int.parse(value.substring(0, 4));
+      final month  = int.parse(value.substring(4, 6));
+      final day    = int.parse(value.substring(6, 8));
+      final hour   = int.parse(value.substring(9, 11));
       final minute = int.parse(value.substring(11, 13));
       final second = int.parse(value.substring(13, 15));
 
       if (value.endsWith('Z')) {
         return DateTime.utc(year, month, day, hour, minute, second);
       }
-      return DateTime(year, month, day, hour, minute, second);
+
+      // Check for TZID parameter (e.g. DTSTART;TZID=America/New_York:20231215T140000)
+      final tzidMatch = RegExp(r'TZID=([^;:]+)').firstMatch(matchedKey ?? '');
+      if (tzidMatch != null) {
+        final tzid = tzidMatch.group(1)!;
+        final utcTime = parseWithTzid(year, month, day, hour, minute, second, tzid);
+        if (utcTime != null) return utcTime;
+        // Unknown TZID: treat as system local time (not UTC)
+        debugPrint('[ICS] Unknown TZID "$tzid" — treating as system local time');
+        return DateTime(year, month, day, hour, minute, second).toUtc();
+      }
+
+      // Floating time (no Z, no TZID): per ICS spec this is "local clock time"
+      return DateTime(year, month, day, hour, minute, second).toUtc();
     }
 
     // Date only: 20231215
     if (value.length >= 8) {
-      final year = int.parse(value.substring(0, 4));
+      final year  = int.parse(value.substring(0, 4));
       final month = int.parse(value.substring(4, 6));
-      final day = int.parse(value.substring(6, 8));
-      return DateTime(year, month, day);
+      final day   = int.parse(value.substring(6, 8));
+      return DateTime.utc(year, month, day);
     }
 
     return null;

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../core/constants.dart';
+import '../core/time_utils.dart';
 import '../models/calendar_event.dart';
 import 'calendar/calendar_manager.dart';
 
@@ -73,8 +74,8 @@ class MeetingPoller {
     final windowStart = now.subtract(Duration(minutes: promptDelayMinutes));
 
     final candidates = CalendarManager.getInstance().cachedEvents.where((event) {
-      final end = DateTime.tryParse(event.end);
-      if (end == null) return false;
+      if (event.end.isEmpty) return false;
+      final end = parseToLocal(event.end);
       return end.isAfter(windowStart) &&
           end.isBefore(now) &&
           event.attendees.length >= minimumAttendees &&

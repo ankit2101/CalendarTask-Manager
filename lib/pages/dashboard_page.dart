@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../core/theme/catppuccin_mocha.dart';
 import '../core/constants.dart';
+import '../core/time_utils.dart';
 import '../models/calendar_event.dart';
 import '../providers/app_providers.dart';
 import '../widgets/quick_note_dialog.dart';
+import '../widgets/timezone_picker_dialog.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
@@ -22,10 +24,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
-  String _eventStatus(NormalizedEvent event) {
+  String _eventStatus(NormalizedEvent event, Map<String, String> overrides) {
     final now = DateTime.now();
-    final start = DateTime.parse(event.start);
-    final end = DateTime.parse(event.end);
+    final tzid = overrides[event.id];
+    final start = tzid != null ? applyTimezoneOverride(event.start, tzid) : parseToLocal(event.start);
+    final end = tzid != null ? applyTimezoneOverride(event.end, tzid) : parseToLocal(event.end);
     if (now.isAfter(end)) return 'past';
     if (now.isAfter(start)) return 'active';
     return 'upcoming';
@@ -37,6 +40,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final history = ref.watch(meetingHistoryProvider);
     final notedEventIds = history.map((r) => r.eventId).toSet();
     final dismissedIds = ref.watch(dismissedMeetingsProvider);
+    final tzOverrides = ref.watch(eventTimezoneOverridesProvider);
     final today = _startOfDay(DateTime.now());
     final isToday = _isSameDay(_selectedDate, today);
 
@@ -111,16 +115,20 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               ),
               data: (events) {
                 final dayEvents = events.where((e) {
-                  final start = DateTime.parse(e.start);
+                  final tzid = tzOverrides[e.id];
+                  final start = tzid != null ? applyTimezoneOverride(e.start, tzid) : parseToLocal(e.start);
                   return _isSameDay(start, _selectedDate) && !isLeaveEvent(e.title);
                 }).toList();
 
                 final now = DateTime.now();
-                final missingCount = dayEvents.where((e) =>
-                    !e.isPrivate &&
-                    DateTime.parse(e.end).isBefore(now) &&
-                    !notedEventIds.contains(e.id) &&
-                    !dismissedIds.contains(e.id)).length;
+                final missingCount = dayEvents.where((e) {
+                  final tzid = tzOverrides[e.id];
+                  final end = tzid != null ? applyTimezoneOverride(e.end, tzid) : parseToLocal(e.end);
+                  return !e.isPrivate &&
+                      end.isBefore(now) &&
+                      !notedEventIds.contains(e.id) &&
+                      !dismissedIds.contains(e.id);
+                }).length;
 
                 if (dayEvents.isEmpty) {
                   return Center(
@@ -157,15 +165,19 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                           style: const TextStyle(color: CatppuccinMocha.yellow, fontSize: 13),
                         ),
                       ),
-                    ...dayEvents.map((event) => _EventCard(
+                    ...dayEvents.map((event) {
+                      final tzid = tzOverrides[event.id];
+                      final end = tzid != null ? applyTimezoneOverride(event.end, tzid) : parseToLocal(event.end);
+                      return _EventCard(
                       event: event,
-                      status: _eventStatus(event),
+                      status: _eventStatus(event, tzOverrides),
                       hasNote: notedEventIds.contains(event.id),
-                      isMissing: DateTime.parse(event.end).isBefore(now) &&
+                      isMissing: end.isBefore(now) &&
                           !notedEventIds.contains(event.id) &&
                           !dismissedIds.contains(event.id),
                       isDismissed: dismissedIds.contains(event.id),
-                    )),
+                      );
+                    }),
                   ],
                 );
               },
@@ -209,6 +221,10 @@ class _EventCard extends ConsumerWidget {
         ? CatppuccinMocha.overlay0.withValues(alpha: 0.4)
         : isMissing ? CatppuccinMocha.yellow : calColor;
     final timeFormat = DateFormat('h:mm a');
+    final overrides = ref.watch(eventTimezoneOverridesProvider);
+    final tzid = overrides[event.id];
+    DateTime resolve(String iso) =>
+        tzid != null ? applyTimezoneOverride(iso, tzid) : parseToLocal(iso);
 
     return Opacity(
       opacity: event.isPrivate ? 0.55 : 1.0,
@@ -292,9 +308,24 @@ class _EventCard extends ConsumerWidget {
             Row(
               children: [
                 Text(
-                  '${timeFormat.format(DateTime.parse(event.start))} \u2013 ${timeFormat.format(DateTime.parse(event.end))}',
+                  '${timeFormat.format(resolve(event.start))} \u2013 ${timeFormat.format(resolve(event.end))}',
                   style: const TextStyle(color: CatppuccinMocha.subtext0, fontSize: 13),
                 ),
+                if (tzid != null) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: CatppuccinMocha.peach.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: CatppuccinMocha.peach.withValues(alpha: 0.4)),
+                    ),
+                    child: Text(
+                      tzDisplayLabel(tzid),
+                      style: const TextStyle(color: CatppuccinMocha.peach, fontSize: 10, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
                 if (!event.isPrivate) ...[
                   if (event.attendees.length > 1)
                     Text(
@@ -312,6 +343,27 @@ class _EventCard extends ConsumerWidget {
                       child: const Text('Online', style: TextStyle(color: CatppuccinMocha.blue, fontSize: 11)),
                     ),
                 ],
+                const Spacer(),
+                GestureDetector(
+                  onTap: () async {
+                    final selected = await showTimezonePickerDialog(context, tzid);
+                    // selected == null means "Reset to auto"; cancel returns tzid unchanged
+                    if (selected == tzid) return;
+                    if (selected == null) {
+                      ref.read(eventTimezoneOverridesProvider.notifier).clearOverride(event.id);
+                    } else {
+                      ref.read(eventTimezoneOverridesProvider.notifier).setOverride(event.id, selected);
+                    }
+                  },
+                  child: Tooltip(
+                    message: tzid != null ? 'Change timezone ($tzid)' : 'Fix timezone',
+                    child: Icon(
+                      Icons.schedule,
+                      size: 14,
+                      color: tzid != null ? CatppuccinMocha.peach : CatppuccinMocha.overlay0,
+                    ),
+                  ),
+                ),
               ],
             ),
 
