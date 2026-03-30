@@ -1,52 +1,63 @@
 import 'package:flutter/material.dart';
-import 'package:timezone/timezone.dart' as tz;
 import '../core/theme/catppuccin_mocha.dart';
-import '../core/time_utils.dart';
 
-/// Shows a searchable list of IANA timezones.
-/// Returns the selected TZID string, or null if the user chose "Reset to auto".
-Future<String?> showTimezonePickerDialog(
-    BuildContext context, String? currentTzid) {
-  return showDialog<String?>(
+/// Shows a dialog to correct the start and end times of a meeting.
+/// [currentStart] and [currentEnd] are the currently displayed local DateTimes.
+/// Returns a record with the corrected {start, end} as UTC ISO 8601 strings,
+/// or null if the user cancelled.
+Future<({String start, String end})?> showTimeEditDialog(
+    BuildContext context, DateTime currentStart, DateTime currentEnd) {
+  return showDialog<({String start, String end})>(
     context: context,
-    builder: (_) => _TimezonePickerDialog(currentTzid: currentTzid),
+    builder: (_) => _TimeEditDialog(
+        currentStart: currentStart, currentEnd: currentEnd),
   );
 }
 
-class _TimezonePickerDialog extends StatefulWidget {
-  final String? currentTzid;
-  const _TimezonePickerDialog({this.currentTzid});
+class _TimeEditDialog extends StatefulWidget {
+  final DateTime currentStart;
+  final DateTime currentEnd;
+  const _TimeEditDialog({required this.currentStart, required this.currentEnd});
 
   @override
-  State<_TimezonePickerDialog> createState() => _TimezonePickerDialogState();
+  State<_TimeEditDialog> createState() => _TimeEditDialogState();
 }
 
-class _TimezonePickerDialogState extends State<_TimezonePickerDialog> {
-  late final List<String> _allZones;
-  late List<String> _filtered;
-  final _controller = TextEditingController();
+class _TimeEditDialogState extends State<_TimeEditDialog> {
+  late TimeOfDay _start;
+  late TimeOfDay _end;
 
   @override
   void initState() {
     super.initState();
-    _allZones = tz.timeZoneDatabase.locations.keys.toList()..sort();
-    _filtered = _allZones;
-    _controller.addListener(_onSearch);
+    _start = TimeOfDay.fromDateTime(widget.currentStart);
+    _end = TimeOfDay.fromDateTime(widget.currentEnd);
   }
 
-  void _onSearch() {
-    final q = _controller.text.toLowerCase();
+  Future<void> _pickTime(bool isStart) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: isStart ? _start : _end,
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: CatppuccinMocha.blue,
+            onPrimary: CatppuccinMocha.base,
+            surface: CatppuccinMocha.surface0,
+            onSurface: CatppuccinMocha.text,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked == null) return;
     setState(() {
-      _filtered = q.isEmpty
-          ? _allZones
-          : _allZones.where((z) => z.toLowerCase().contains(q)).toList();
+      if (isStart) {
+        _start = picked;
+      } else {
+        _end = picked;
+      }
     });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
   }
 
   @override
@@ -54,115 +65,120 @@ class _TimezonePickerDialogState extends State<_TimezonePickerDialog> {
     return Dialog(
       backgroundColor: CatppuccinMocha.mantle,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: SizedBox(
-        width: 420,
-        height: 520,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text(
-                'Select Timezone',
-                style: const TextStyle(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: SizedBox(
+          width: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Edit Meeting Time',
+                style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: CatppuccinMocha.text),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: TextField(
-                controller: _controller,
-                autofocus: true,
-                style: const TextStyle(color: CatppuccinMocha.text),
-                decoration: InputDecoration(
-                  hintText: 'Search timezones...',
-                  hintStyle:
-                      const TextStyle(color: CatppuccinMocha.overlay0),
-                  prefixIcon: const Icon(Icons.search,
-                      color: CatppuccinMocha.overlay0, size: 18),
-                  filled: true,
-                  fillColor: CatppuccinMocha.surface0,
-                  contentPadding:
-                      const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
+              const SizedBox(height: 4),
+              Text(
+                'Times are in your local timezone',
+                style: const TextStyle(
+                    fontSize: 12, color: CatppuccinMocha.overlay0),
               ),
-            ),
-            const SizedBox(height: 4),
-            // "Reset to auto" option
-            InkWell(
-              onTap: () => Navigator.of(context).pop(null),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Row(
-                  children: [
-                    const Icon(Icons.refresh,
-                        size: 16, color: CatppuccinMocha.blue),
-                    const SizedBox(width: 8),
-                    const Text('Reset to auto',
-                        style: TextStyle(
-                            color: CatppuccinMocha.blue, fontSize: 13)),
-                  ],
-                ),
-              ),
-            ),
-            Divider(
-                color: CatppuccinMocha.surface1, height: 1, thickness: 1),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _filtered.length,
-                itemBuilder: (_, i) {
-                  final tzid = _filtered[i];
-                  final isSelected = tzid == widget.currentTzid;
-                  final label = tzDisplayLabel(tzid);
-                  return InkWell(
-                    onTap: () => Navigator.of(context).pop(tzid),
-                    child: Container(
-                      color: isSelected
-                          ? CatppuccinMocha.blue.withValues(alpha: 0.15)
-                          : null,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 9),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              tzid,
-                              style: TextStyle(
-                                color: isSelected
-                                    ? CatppuccinMocha.blue
-                                    : CatppuccinMocha.text,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            label,
-                            style: const TextStyle(
-                                color: CatppuccinMocha.overlay0,
-                                fontSize: 12),
-                          ),
-                        ],
-                      ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: _TimeTile(
+                      label: 'Start',
+                      time: _start,
+                      onTap: () => _pickTime(true),
                     ),
-                  );
-                },
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _TimeTile(
+                      label: 'End',
+                      time: _end,
+                      onTap: () => _pickTime(false),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: TextButton(
-                onPressed: () => Navigator.of(context).pop(widget.currentTzid),
-                child: const Text('Cancel',
-                    style: TextStyle(color: CatppuccinMocha.overlay0)),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(null),
+                    child: const Text('Cancel',
+                        style: TextStyle(color: CatppuccinMocha.overlay0)),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () {
+                      final base = widget.currentStart;
+                      final newStart = DateTime(
+                          base.year, base.month, base.day,
+                          _start.hour, _start.minute);
+                      final newEnd = DateTime(
+                          base.year, base.month, base.day,
+                          _end.hour, _end.minute);
+                      Navigator.of(context).pop((
+                        start: newStart.toUtc().toIso8601String(),
+                        end: newEnd.toUtc().toIso8601String(),
+                      ));
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: CatppuccinMocha.blue,
+                      foregroundColor: CatppuccinMocha.base,
+                    ),
+                    child: const Text('Save'),
+                  ),
+                ],
               ),
-            ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TimeTile extends StatelessWidget {
+  final String label;
+  final TimeOfDay time;
+  final VoidCallback onTap;
+
+  const _TimeTile(
+      {required this.label, required this.time, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final formatted = time.format(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: CatppuccinMocha.surface0,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: CatppuccinMocha.surface1),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 11, color: CatppuccinMocha.overlay0)),
+            const SizedBox(height: 4),
+            Text(formatted,
+                style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: CatppuccinMocha.text)),
           ],
         ),
       ),

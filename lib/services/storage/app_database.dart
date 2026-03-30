@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:macos_secure_bookmarks/macos_secure_bookmarks.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/calendar_event.dart';
@@ -8,6 +10,7 @@ import '../../models/todo_task.dart';
 import '../../models/settings.dart';
 
 const _kDataDirKey = 'dataDirectoryPath';
+const _kBookmarkKey = 'dataDirectoryBookmark';
 const _kDataFileName = 'calendartask_data.json';
 
 class AppDatabase {
@@ -34,6 +37,24 @@ class AppDatabase {
   }
 
   static Future<String> _resolveDataFilePath(SharedPreferences prefs) async {
+    // Try to restore a previously saved security-scoped bookmark (macOS only).
+    if (Platform.isMacOS) {
+      final bookmark = prefs.getString(_kBookmarkKey);
+      if (bookmark != null) {
+        try {
+          final bookmarks = SecureBookmarks();
+          final resolved = await bookmarks.resolveBookmark(bookmark);
+          await bookmarks.startAccessingSecurityScopedResource(resolved);
+          final dir = resolved.path.replaceAll(RegExp(r'/$'), '');
+          await prefs.setString(_kDataDirKey, dir);
+          return '$dir/$_kDataFileName';
+        } catch (e) {
+          debugPrint('[DB] Failed to resolve bookmark: $e');
+          // Fall through to path-based fallback below
+        }
+      }
+    }
+
     String? dir = prefs.getString(_kDataDirKey);
     if (dir == null) {
       final appSupport = await getApplicationSupportDirectory();
@@ -97,6 +118,18 @@ class AppDatabase {
       await File(newPath).writeAsString(jsonEncode(inst._data), flush: true);
     }
     await prefs.setString(_kDataDirKey, newDir);
+
+    // Save a security-scoped bookmark so access persists after restart (macOS).
+    if (Platform.isMacOS) {
+      try {
+        final bookmarks = SecureBookmarks();
+        final bookmark = await bookmarks.bookmark(Directory(newDir));
+        await prefs.setString(_kBookmarkKey, bookmark);
+      } catch (e) {
+        debugPrint('[DB] Failed to save bookmark: $e');
+      }
+    }
+
     resetInstance();
   }
 
@@ -224,25 +257,29 @@ class AppDatabase {
     await _save();
   }
 
-  // --- Event timezone overrides ---
+  // --- Event time overrides (user-corrected start/end times) ---
 
-  Map<String, String> getEventTimezoneOverrides() {
-    final map = _data['eventTimezoneOverrides'] as Map<String, dynamic>?;
+  /// Returns a map of eventId → {start, end} ISO 8601 UTC strings.
+  Map<String, Map<String, String>> getEventTimeOverrides() {
+    final map = _data['eventTimeOverrides'] as Map<String, dynamic>?;
     if (map == null) return {};
-    return map.map((k, v) => MapEntry(k, v as String));
+    return map.map((k, v) {
+      final inner = v as Map<String, dynamic>;
+      return MapEntry(k, {'start': inner['start'] as String, 'end': inner['end'] as String});
+    });
   }
 
-  Future<void> setEventTimezoneOverride(String eventId, String tzid) async {
-    final overrides = getEventTimezoneOverrides();
-    overrides[eventId] = tzid;
-    _data['eventTimezoneOverrides'] = overrides;
+  Future<void> setEventTimeOverride(String eventId, String startIso, String endIso) async {
+    final overrides = getEventTimeOverrides();
+    overrides[eventId] = {'start': startIso, 'end': endIso};
+    _data['eventTimeOverrides'] = overrides;
     await _save();
   }
 
-  Future<void> clearEventTimezoneOverride(String eventId) async {
-    final overrides = getEventTimezoneOverrides();
+  Future<void> clearEventTimeOverride(String eventId) async {
+    final overrides = getEventTimeOverrides();
     overrides.remove(eventId);
-    _data['eventTimezoneOverrides'] = overrides;
+    _data['eventTimeOverrides'] = overrides;
     await _save();
   }
 

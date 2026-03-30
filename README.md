@@ -25,6 +25,7 @@ Grab the latest `.dmg` from [Releases](https://github.com/ankit2101/CalendarTask
 - Private appointments shown with a 🔒 lock icon
 - **Auto-refresh** every 15 minutes — no manual action needed
 - **Dismiss** past meeting reminders with the × button
+- **Edit meeting time** — tap the ✏️ pencil icon on any event to correct the start/end time if it was captured in the wrong timezone. An **edited** badge marks overridden events; the reset button restores the original time
 
 ### ✏️ Meeting Notes
 - **+ Add Notes** button on every past meeting
@@ -192,11 +193,12 @@ create-dmg \
 |---|---|
 | Language | Dart / Flutter |
 | State management | Riverpod |
-| Persistence | SharedPreferences |
+| Persistence | JSON file + SharedPreferences |
 | AI | Anthropic Claude API |
 | Google auth | google_sign_in |
 | Microsoft auth | MSAL (via http) |
-| ICS parsing | ical_parser |
+| ICS parsing | Custom RFC 5545 parser |
+| Timezones | IANA tz database (timezone package) |
 | HTTP | Dio |
 | Theme | Catppuccin Mocha |
 
@@ -229,9 +231,11 @@ lib/
 │   └── storage/app_database.dart   # Local data persistence
 ├── widgets/
 │   ├── app_scaffold.dart           # Sidebar + navigation
-│   └── quick_note_dialog.dart      # Meeting note capture dialog
+│   ├── quick_note_dialog.dart      # Meeting note capture dialog
+│   └── timezone_picker_dialog.dart # Meeting time correction dialog
 └── core/
     ├── constants.dart              # Claude model list
+    ├── time_utils.dart             # Timezone helpers + Windows↔IANA map
     └── theme/                      # Catppuccin Mocha theme
 ```
 
@@ -239,7 +243,11 @@ lib/
 
 ## Data Storage
 
-All data is stored locally in `~/Library/Application Support/com.caltask.calendar_task_manager/` via SharedPreferences. No data is sent to any server except the Claude API when extracting action items.
+All data is stored locally in a single JSON file (`calendartask_data.json`). The default location is `~/Library/Application Support/com.caltask.calendar_task_manager/`, but you can move it anywhere — including a cloud folder like **OneDrive or iCloud Drive** — via **Settings → Change Data Location**.
+
+When you choose a folder outside the app sandbox (e.g. `~/Library/CloudStorage/`), the app saves a macOS **security-scoped bookmark** so it can re-open the file automatically on every future launch without prompting.
+
+No data is sent to any server except the Claude API when extracting action items.
 
 ---
 

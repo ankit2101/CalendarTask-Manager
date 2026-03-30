@@ -169,32 +169,32 @@ class TodosNotifier extends StateNotifier<List<TodoTask>> {
   void reload() => _load();
 }
 
-// Event timezone overrides
-final eventTimezoneOverridesProvider =
-    StateNotifierProvider<EventTimezoneOverridesNotifier, Map<String, String>>((ref) {
-  return EventTimezoneOverridesNotifier();
+// Event time overrides (user-corrected start/end times)
+final eventTimeOverridesProvider =
+    StateNotifierProvider<EventTimeOverridesNotifier, Map<String, Map<String, String>>>((ref) {
+  return EventTimeOverridesNotifier();
 });
 
-class EventTimezoneOverridesNotifier extends StateNotifier<Map<String, String>> {
-  EventTimezoneOverridesNotifier() : super({}) {
+class EventTimeOverridesNotifier extends StateNotifier<Map<String, Map<String, String>>> {
+  EventTimeOverridesNotifier() : super({}) {
     _load();
   }
 
   Future<void> _load() async {
     final db = await AppDatabase.getInstance();
-    state = db.getEventTimezoneOverrides();
+    state = db.getEventTimeOverrides();
   }
 
-  Future<void> setOverride(String eventId, String tzid) async {
+  Future<void> setOverride(String eventId, String startIso, String endIso) async {
     final db = await AppDatabase.getInstance();
-    await db.setEventTimezoneOverride(eventId, tzid);
-    state = {...state, eventId: tzid};
+    await db.setEventTimeOverride(eventId, startIso, endIso);
+    state = {...state, eventId: {'start': startIso, 'end': endIso}};
   }
 
   Future<void> clearOverride(String eventId) async {
     final db = await AppDatabase.getInstance();
-    await db.clearEventTimezoneOverride(eventId);
-    final updated = Map<String, String>.from(state);
+    await db.clearEventTimeOverride(eventId);
+    final updated = Map<String, Map<String, String>>.from(state);
     updated.remove(eventId);
     state = updated;
   }

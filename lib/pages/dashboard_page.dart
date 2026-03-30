@@ -24,11 +24,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
-  String _eventStatus(NormalizedEvent event, Map<String, String> overrides) {
+  String _eventStatus(NormalizedEvent event, Map<String, Map<String, String>> overrides) {
     final now = DateTime.now();
-    final tzid = overrides[event.id];
-    final start = tzid != null ? applyTimezoneOverride(event.start, tzid) : parseToLocal(event.start);
-    final end = tzid != null ? applyTimezoneOverride(event.end, tzid) : parseToLocal(event.end);
+    final ov = overrides[event.id];
+    final start = ov != null ? parseToLocal(ov['start']!) : parseToLocal(event.start);
+    final end = ov != null ? parseToLocal(ov['end']!) : parseToLocal(event.end);
     if (now.isAfter(end)) return 'past';
     if (now.isAfter(start)) return 'active';
     return 'upcoming';
@@ -40,7 +40,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final history = ref.watch(meetingHistoryProvider);
     final notedEventIds = history.map((r) => r.eventId).toSet();
     final dismissedIds = ref.watch(dismissedMeetingsProvider);
-    final tzOverrides = ref.watch(eventTimezoneOverridesProvider);
+    final tzOverrides = ref.watch(eventTimeOverridesProvider);
     final today = _startOfDay(DateTime.now());
     final isToday = _isSameDay(_selectedDate, today);
 
@@ -115,15 +115,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               ),
               data: (events) {
                 final dayEvents = events.where((e) {
-                  final tzid = tzOverrides[e.id];
-                  final start = tzid != null ? applyTimezoneOverride(e.start, tzid) : parseToLocal(e.start);
+                  final ov = tzOverrides[e.id];
+                  final start = ov != null ? parseToLocal(ov['start']!) : parseToLocal(e.start);
                   return _isSameDay(start, _selectedDate) && !isLeaveEvent(e.title);
                 }).toList();
 
                 final now = DateTime.now();
                 final missingCount = dayEvents.where((e) {
-                  final tzid = tzOverrides[e.id];
-                  final end = tzid != null ? applyTimezoneOverride(e.end, tzid) : parseToLocal(e.end);
+                  final ov = tzOverrides[e.id];
+                  final end = ov != null ? parseToLocal(ov['end']!) : parseToLocal(e.end);
                   return !e.isPrivate &&
                       end.isBefore(now) &&
                       !notedEventIds.contains(e.id) &&
@@ -166,8 +166,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         ),
                       ),
                     ...dayEvents.map((event) {
-                      final tzid = tzOverrides[event.id];
-                      final end = tzid != null ? applyTimezoneOverride(event.end, tzid) : parseToLocal(event.end);
+                      final ov = tzOverrides[event.id];
+                      final end = ov != null ? parseToLocal(ov['end']!) : parseToLocal(event.end);
                       return _EventCard(
                       event: event,
                       status: _eventStatus(event, tzOverrides),
@@ -221,10 +221,10 @@ class _EventCard extends ConsumerWidget {
         ? CatppuccinMocha.overlay0.withValues(alpha: 0.4)
         : isMissing ? CatppuccinMocha.yellow : calColor;
     final timeFormat = DateFormat('h:mm a');
-    final overrides = ref.watch(eventTimezoneOverridesProvider);
-    final tzid = overrides[event.id];
-    DateTime resolve(String iso) =>
-        tzid != null ? applyTimezoneOverride(iso, tzid) : parseToLocal(iso);
+    final overrides = ref.watch(eventTimeOverridesProvider);
+    final ov = overrides[event.id];
+    DateTime resolveStart() => ov != null ? parseToLocal(ov['start']!) : parseToLocal(event.start);
+    DateTime resolveEnd() => ov != null ? parseToLocal(ov['end']!) : parseToLocal(event.end);
 
     return Opacity(
       opacity: event.isPrivate ? 0.55 : 1.0,
@@ -308,10 +308,10 @@ class _EventCard extends ConsumerWidget {
             Row(
               children: [
                 Text(
-                  '${timeFormat.format(resolve(event.start))} \u2013 ${timeFormat.format(resolve(event.end))}',
+                  '${timeFormat.format(resolveStart())} \u2013 ${timeFormat.format(resolveEnd())}',
                   style: const TextStyle(color: CatppuccinMocha.subtext0, fontSize: 13),
                 ),
-                if (tzid != null) ...[
+                if (ov != null) ...[
                   const SizedBox(width: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -320,9 +320,9 @@ class _EventCard extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(color: CatppuccinMocha.peach.withValues(alpha: 0.4)),
                     ),
-                    child: Text(
-                      tzDisplayLabel(tzid),
-                      style: const TextStyle(color: CatppuccinMocha.peach, fontSize: 10, fontWeight: FontWeight.w600),
+                    child: const Text(
+                      'edited',
+                      style: TextStyle(color: CatppuccinMocha.peach, fontSize: 10, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ],
@@ -346,24 +346,31 @@ class _EventCard extends ConsumerWidget {
                 const Spacer(),
                 GestureDetector(
                   onTap: () async {
-                    final selected = await showTimezonePickerDialog(context, tzid);
-                    // selected == null means "Reset to auto"; cancel returns tzid unchanged
-                    if (selected == tzid) return;
-                    if (selected == null) {
-                      ref.read(eventTimezoneOverridesProvider.notifier).clearOverride(event.id);
-                    } else {
-                      ref.read(eventTimezoneOverridesProvider.notifier).setOverride(event.id, selected);
-                    }
+                    final result = await showTimeEditDialog(
+                        context, resolveStart(), resolveEnd());
+                    if (result == null) return;
+                    ref.read(eventTimeOverridesProvider.notifier)
+                        .setOverride(event.id, result.start, result.end);
                   },
                   child: Tooltip(
-                    message: tzid != null ? 'Change timezone ($tzid)' : 'Fix timezone',
+                    message: ov != null ? 'Edit time (custom)' : 'Edit time',
                     child: Icon(
-                      Icons.schedule,
+                      Icons.edit_outlined,
                       size: 14,
-                      color: tzid != null ? CatppuccinMocha.peach : CatppuccinMocha.overlay0,
+                      color: ov != null ? CatppuccinMocha.peach : CatppuccinMocha.overlay0,
                     ),
                   ),
                 ),
+                if (ov != null) ...[
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: () => ref.read(eventTimeOverridesProvider.notifier).clearOverride(event.id),
+                    child: const Tooltip(
+                      message: 'Reset to original time',
+                      child: Icon(Icons.refresh, size: 14, color: CatppuccinMocha.overlay0),
+                    ),
+                  ),
+                ],
               ],
             ),
 
