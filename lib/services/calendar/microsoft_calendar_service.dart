@@ -122,7 +122,7 @@ class MicrosoftCalendarService {
       nextUrl = pageResponse.data['@odata.nextLink'] as String?;
     }
 
-    debugPrint('[MS Calendar] Fetched ${allItems.length} events for $email');
+    debugPrint('[MS Calendar] Fetched ${allItems.length} events');
     return allItems.map((e) => _normalizeEvent(e, accountId)).toList();
   }
 

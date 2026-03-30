@@ -1,5 +1,7 @@
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+/// Stores sensitive credentials (OAuth refresh tokens, API keys) in the
+/// platform secure store — macOS Keychain on macOS.
 class TokenStore {
   static final TokenStore _instance = TokenStore._();
 
@@ -7,18 +9,22 @@ class TokenStore {
 
   static TokenStore get instance => _instance;
 
+  static const _storage = FlutterSecureStorage(
+    mOptions: MacOsOptions(
+      accountName: 'com.caltask.calendarTaskManager',
+      synchronizable: false,
+    ),
+  );
+
   Future<String?> loadSecret(String key) async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token_$key');
+    return _storage.read(key: 'token_$key');
   }
 
   Future<void> saveSecret(String key, String value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('token_$key', value);
+    await _storage.write(key: 'token_$key', value: value);
   }
 
   Future<void> deleteSecret(String key) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('token_$key');
+    await _storage.delete(key: 'token_$key');
   }
 }

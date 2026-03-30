@@ -29,6 +29,24 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     final name = _icsNameController.text.trim();
     if (url.isEmpty) return;
 
+    final uri = Uri.tryParse(url);
+    final scheme = uri?.scheme.toLowerCase() ?? '';
+    if (uri == null || uri.host.isEmpty || !{'https', 'webcal', 'http'}.contains(scheme)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid https:// or webcal:// URL')),
+      );
+      return;
+    }
+    // Warn if http (unencrypted) — still allow it in case the server doesn't support TLS
+    if (scheme == 'http') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Warning: this feed uses plain HTTP — calendar data will not be encrypted in transit'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
+
     ref.read(accountsProvider.notifier).addAccount(CalendarAccount(
       id: const Uuid().v4(),
       email: url,

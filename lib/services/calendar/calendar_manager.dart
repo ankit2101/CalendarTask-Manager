@@ -1,4 +1,5 @@
 import 'dart:math' show min;
+import 'package:flutter/foundation.dart';
 import '../../models/calendar_event.dart';
 import '../storage/app_database.dart';
 import 'ics_calendar_service.dart';
@@ -42,9 +43,8 @@ class CalendarManager {
             allEvents.addAll(events);
         }
       } catch (e) {
-        // Log but don't fail all accounts
-        // ignore: avoid_print
-        print('[CalendarManager] Failed to fetch for ${account.email}: $e');
+        // Log but don't fail all accounts (debugPrint is stripped in release builds)
+        debugPrint('[CalendarManager] Failed to fetch for account ${account.id}: $e');
       }
     }
 
