@@ -1,6 +1,6 @@
 # CalendarTask Manager
 
-A native macOS app (Flutter) that connects your calendars, captures meeting notes with AI-extracted action items, and keeps your to-do list in one place.
+A native macOS app (Flutter) that connects your calendars via ICS/Webcal feeds, captures meeting notes with AI-extracted action items, and keeps your to-do list in one place.
 
 ---
 
@@ -17,8 +17,8 @@ Grab the latest `.dmg` from [Releases](https://github.com/ankit2101/CalendarTask
 ## Features
 
 ### 📅 Calendar
-- Connect **Google Calendar**, **Microsoft Outlook**, and **ICS / Webcal feeds**
-- View events across all accounts in a single daily view
+- Connect any calendar via **ICS / Webcal feeds** (Google, Outlook, iCloud, and more)
+- View events across all feeds in a single daily view
 - Navigate forward and backward through dates
 - Live **IN PROGRESS** badge on meetings happening right now
 - Leave/OOO events (PTO, vacation, out of office) are automatically hidden
@@ -37,7 +37,9 @@ Grab the latest `.dmg` from [Releases](https://github.com/ankit2101/CalendarTask
 
 ### ✅ To-Do Board
 - Three states: **To-Do → In Progress → Completed**
-- Edit task title, description, and priority inline
+- Edit task title, description, priority, and **due date** inline
+- New tasks default to a due date **2 days from creation**
+- Due dates are colour-coded: orange when due today, red when overdue
 - Each task card shows the **source meeting name** and **created date**
 - Action items from meeting notes land here automatically
 
@@ -69,82 +71,39 @@ Download `CalendarTaskManager.dmg` from [Releases](https://github.com/ankit2101/
 
 Open the app → **Settings** → paste your API key → **Save**.
 
-### 3. Connect your calendar
+### 3. Connect your calendars
 
-Go to **Accounts** and choose one of the options below.
+Go to **Accounts** → paste an ICS/Webcal URL → **Add**.
 
 ---
 
 ## Connecting Calendars
 
-### Option A — ICS Feed (easiest, no OAuth needed)
+All calendars are connected via a private ICS URL — no OAuth or third-party sign-in required.
 
-Both Google Calendar and Outlook support a private ICS URL that works without any OAuth setup.
-
-#### Google Calendar ICS
+### Google Calendar
 
 1. Open [calendar.google.com](https://calendar.google.com)
 2. Click the **⚙ Settings** gear → **Settings**
 3. In the left sidebar, click the calendar you want (under "Settings for my calendars")
 4. Scroll down to **Secret address in iCal format**
 5. Copy the URL (starts with `https://calendar.google.com/calendar/ical/...`)
-6. In the app → **Accounts** → **ICS / Webcal** section → paste the URL → **Add**
+6. In the app → **Accounts** → paste the URL → **Add**
 
-#### Microsoft Outlook / Office 365 ICS
+### Microsoft Outlook / Office 365
 
-1. Open [outlook.office.com](https://outlook.office.com) or Outlook desktop
+1. Open [outlook.office.com](https://outlook.office.com)
 2. Click the **Calendar** icon
-3. Click **Settings** (⚙) → **View all Outlook settings** → **Calendar** → **Shared calendars**
+3. Go to **Settings** (⚙) → **View all Outlook settings** → **Calendar** → **Shared calendars**
 4. Under **Publish a calendar**, select your calendar and permission level → **Publish**
 5. Copy the **ICS** link
-6. In the app → **Accounts** → **ICS / Webcal** section → paste the URL → **Add**
+6. In the app → **Accounts** → paste the URL → **Add**
 
-> **iCloud Calendar ICS**
-> 1. Open the Calendar app on Mac
-> 2. Right-click a calendar → **Get Info** → check **Public Calendar**
-> 3. Copy the URL shown → paste into the ICS section of the app
+### iCloud Calendar
 
----
-
-### Option B — Google OAuth (shows private events)
-
-Requires a one-time Google Cloud setup.
-
-1. Go to [console.cloud.google.com](https://console.cloud.google.com) → create a new project
-2. **APIs & Services** → **Library** → search **Google Calendar API** → **Enable**
-3. **APIs & Services** → **Credentials** → **+ Create Credentials** → **OAuth client ID**
-4. Configure the OAuth consent screen if prompted (External, add your email as test user)
-5. Application type: **macOS** (or Desktop app) → **Create**
-6. Download the credentials → save as `GoogleService-Info.plist`
-7. Place the file in `macos/Runner/` and add the reversed client ID URL scheme to `macos/Runner/Info.plist`:
-
-```xml
-<key>CFBundleURLTypes</key>
-<array>
-  <dict>
-    <key>CFBundleURLSchemes</key>
-    <array>
-      <string>com.googleusercontent.apps.YOUR_CLIENT_ID</string>
-    </array>
-  </dict>
-</array>
-```
-
-8. Rebuild: `flutter run -d macos`
-9. In the app → **Accounts** → **Add Google Account**
-
----
-
-### Option C — Microsoft OAuth (shows private events)
-
-1. Go to [portal.azure.com](https://portal.azure.com) → **Azure Active Directory** → **App registrations** → **New registration**
-2. Platform: **Mobile and desktop applications**
-3. Redirect URI: `msauth.com.example.calendartaskmanager://auth`
-4. Under **API permissions** → add: `Calendars.Read`, `User.Read`
-5. Copy the **Application (client) ID**
-6. Paste it into `lib/services/calendar/microsoft_calendar_service.dart` at the `_microsoftClientId` constant
-7. Rebuild: `flutter run -d macos`
-8. In the app → **Accounts** → **Add Microsoft Account**
+1. Open the **Calendar** app on Mac
+2. Right-click a calendar → **Get Info** → check **Public Calendar**
+3. Copy the URL shown → paste into the app
 
 ---
 
@@ -176,13 +135,15 @@ flutter run -d macos
 flutter build macos --release
 brew install create-dmg
 create-dmg \
-  --volname "CalendarTask Manager" \
-  --window-size 600 400 \
-  --icon-size 100 \
-  --icon "calendar_task_manager.app" 150 185 \
-  --app-drop-link 450 185 \
-  "dist/CalendarTaskManager.dmg" \
-  "build/macos/Build/Products/Release/"
+  --volname "CalendarTaskManager" \
+  --window-pos 200 120 \
+  --window-size 660 400 \
+  --icon-size 128 \
+  --icon "calendar_task_manager.app" 180 170 \
+  --hide-extension "calendar_task_manager.app" \
+  --app-drop-link 480 170 \
+  "CalendarTaskManager.dmg" \
+  "build/macos/Build/Products/Release/calendar_task_manager.app"
 ```
 
 ---
@@ -193,10 +154,8 @@ create-dmg \
 |---|---|
 | Language | Dart / Flutter |
 | State management | Riverpod |
-| Persistence | JSON file + SharedPreferences |
+| Persistence | JSON file (data) + macOS Keychain (secrets) |
 | AI | Anthropic Claude API |
-| Google auth | google_sign_in |
-| Microsoft auth | MSAL (via http) |
 | ICS parsing | Custom RFC 5545 parser |
 | Timezones | IANA tz database (timezone package) |
 | HTTP | Dio |
@@ -215,20 +174,18 @@ lib/
 │   ├── dashboard_page.dart         # Daily calendar view
 │   ├── todos_page.dart             # To-do board (To-Do / In Progress / Done)
 │   ├── notes_page.dart             # Saved meeting notes + edit
-│   ├── accounts_page.dart          # Calendar account management
+│   ├── accounts_page.dart          # Calendar account management (ICS/Webcal)
 │   └── settings_page.dart          # API key + model selector
 ├── providers/
 │   └── app_providers.dart          # Riverpod providers
 ├── services/
 │   ├── ai/claude_client.dart       # Anthropic API client
-│   ├── auth/token_store.dart       # API key persistence
+│   ├── auth/token_store.dart       # Secure credential storage (Keychain)
 │   ├── calendar/
-│   │   ├── calendar_manager.dart   # Aggregates all calendar sources
-│   │   ├── google_calendar_service.dart
-│   │   ├── microsoft_calendar_service.dart
-│   │   └── ics_calendar_service.dart
+│   │   ├── calendar_manager.dart   # Aggregates ICS feeds + deduplication
+│   │   └── ics_calendar_service.dart  # RFC 5545 ICS parser
 │   ├── meeting_poller.dart         # Live meeting detection
-│   └── storage/app_database.dart   # Local data persistence
+│   └── storage/app_database.dart   # Local JSON data persistence
 ├── widgets/
 │   ├── app_scaffold.dart           # Sidebar + navigation
 │   ├── quick_note_dialog.dart      # Meeting note capture dialog
@@ -246,6 +203,8 @@ lib/
 All data is stored locally in a single JSON file (`calendartask_data.json`). The default location is `~/Library/Application Support/com.caltask.calendar_task_manager/`, but you can move it anywhere — including a cloud folder like **OneDrive or iCloud Drive** — via **Settings → Change Data Location**.
 
 When you choose a folder outside the app sandbox (e.g. `~/Library/CloudStorage/`), the app saves a macOS **security-scoped bookmark** so it can re-open the file automatically on every future launch without prompting.
+
+Sensitive credentials (Claude API key) are stored in the **macOS Keychain**, not in the data file.
 
 No data is sent to any server except the Claude API when extracting action items.
 
