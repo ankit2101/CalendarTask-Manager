@@ -78,7 +78,12 @@ class IcsCalendarService {
         rawSummary.trim().toLowerCase() == 'private';
     final summary = isPrivate ? 'Private' : rawSummary;
     final dtStart = _parseDateTime(props, 'DTSTART');
-    final dtEnd = _parseDateTime(props, 'DTEND');
+    DateTime? dtEnd = _parseDateTime(props, 'DTEND');
+
+    // RFC 5545: DTEND may be absent when DURATION is present instead.
+    if (dtEnd == null && dtStart != null && props.containsKey('DURATION')) {
+      dtEnd = dtStart.add(_parseDuration(props['DURATION']!));
+    }
 
     if (uid == null || dtStart == null || dtEnd == null) return null;
 
@@ -178,6 +183,29 @@ class IcsCalendarService {
     }
 
     return null;
+  }
+
+  /// Parses an RFC 5545 DURATION value (e.g. PT1H30M, P1D, P1DT2H) into a [Duration].
+  Duration _parseDuration(String raw) {
+    final s = raw.trim().toUpperCase();
+    var weeks = 0, days = 0, hours = 0, minutes = 0, seconds = 0;
+    final pattern = RegExp(r'(\d+)([WDHMS])');
+    for (final m in pattern.allMatches(s)) {
+      final n = int.parse(m.group(1)!);
+      switch (m.group(2)) {
+        case 'W': weeks   = n;
+        case 'D': days    = n;
+        case 'H': hours   = n;
+        case 'M': minutes = n;
+        case 'S': seconds = n;
+      }
+    }
+    return Duration(
+      days:    weeks * 7 + days,
+      hours:   hours,
+      minutes: minutes,
+      seconds: seconds,
+    );
   }
 
   Attendee? _parseAttendee(String line) {

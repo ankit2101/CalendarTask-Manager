@@ -1,3 +1,4 @@
+import 'dart:math' show min;
 import '../../models/calendar_event.dart';
 import '../storage/app_database.dart';
 import 'ics_calendar_service.dart';
@@ -48,8 +49,19 @@ class CalendarManager {
     }
 
     allEvents.sort((a, b) => a.start.compareTo(b.start));
-    _cachedEvents = allEvents;
-    return allEvents;
+
+    // Deduplicate: same title + same start minute = same meeting across providers.
+    // Happens when a calendar is connected via both ICS and OAuth simultaneously.
+    final seen = <String>{};
+    final deduped = <NormalizedEvent>[];
+    for (final event in allEvents) {
+      // Key on first 16 chars of ISO start (YYYY-MM-DDTHH:MM) + normalised title.
+      final key = '${event.title.trim().toLowerCase()}|${event.start.substring(0, min(16, event.start.length))}';
+      if (seen.add(key)) deduped.add(event);
+    }
+
+    _cachedEvents = deduped;
+    return deduped;
   }
 
   Future<String> connectGoogleAccount() => _googleService.signIn();

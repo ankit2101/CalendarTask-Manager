@@ -80,32 +80,50 @@ class MicrosoftCalendarService {
   }
 
   /// Fetches calendar events for the account using a refreshed access token.
+  /// Matches the ICS 60-day window (30 days past → 30 days future) and
+  /// follows @odata.nextLink to page through all results.
   Future<List<NormalizedEvent>> fetchEvents(String accountId, String email) async {
     final accessToken = await _refreshAccessToken(email);
 
     final now = DateTime.now().toUtc();
-    final startDateTime = now.subtract(const Duration(hours: 1)).toIso8601String();
-    final endDateTime = now.add(const Duration(hours: 24)).toIso8601String();
+    final startDateTime = now.subtract(const Duration(days: 30)).toIso8601String();
+    final endDateTime = now.add(const Duration(days: 30)).toIso8601String();
 
-    final response = await _dio.get(
+    final headers = {
+      'Authorization': 'Bearer $accessToken',
+      'Prefer': 'outlook.timezone="UTC"',
+    };
+
+    final allItems = <Map<String, dynamic>>[];
+    String? nextUrl;
+
+    // First page
+    final firstResponse = await _dio.get(
       '/me/calendarView',
-      options: Options(headers: {
-        'Authorization': 'Bearer $accessToken',
-        'Prefer': 'outlook.timezone="UTC"',
-      }),
+      options: Options(headers: headers),
       queryParameters: {
         'startDateTime': startDateTime,
         'endDateTime': endDateTime,
         r'$select':
             'id,subject,start,end,location,isOnlineMeeting,onlineMeetingUrl,attendees,organizer,bodyPreview,responseStatus',
-        r'$top': 100,
+        r'$top': 500,
       },
     );
+    allItems.addAll(((firstResponse.data['value'] as List<dynamic>?) ?? []).cast<Map<String, dynamic>>());
+    nextUrl = firstResponse.data['@odata.nextLink'] as String?;
 
-    final items = (response.data['value'] as List<dynamic>?) ?? [];
-    return items
-        .map((e) => _normalizeEvent(e as Map<String, dynamic>, accountId))
-        .toList();
+    // Follow pagination links until exhausted
+    while (nextUrl != null) {
+      final pageResponse = await _dio.getUri(
+        Uri.parse(nextUrl),
+        options: Options(headers: headers),
+      );
+      allItems.addAll(((pageResponse.data['value'] as List<dynamic>?) ?? []).cast<Map<String, dynamic>>());
+      nextUrl = pageResponse.data['@odata.nextLink'] as String?;
+    }
+
+    debugPrint('[MS Calendar] Fetched ${allItems.length} events for $email');
+    return allItems.map((e) => _normalizeEvent(e, accountId)).toList();
   }
 
   Future<String> _refreshAccessToken(String email) async {
