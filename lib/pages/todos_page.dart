@@ -26,10 +26,12 @@ class _TodosPageState extends ConsumerState<TodosPage> {
   void _addTodo() {
     final title = _titleController.text.trim();
     if (title.isEmpty) return;
+    final now = DateTime.now();
     ref.read(todosProvider.notifier).addTodo(TodoTask(
       id: const Uuid().v4(),
       title: title,
-      createdAt: DateTime.now().toIso8601String(),
+      createdAt: now.toIso8601String(),
+      dueDate: now.add(const Duration(days: 2)).toIso8601String(),
     ));
     _titleController.clear();
   }
@@ -138,6 +140,7 @@ class _EditTodoDialogState extends ConsumerState<_EditTodoDialog> {
   late final TextEditingController _titleCtrl;
   late final TextEditingController _descCtrl;
   late int _priority;
+  DateTime? _dueDate;
 
   @override
   void initState() {
@@ -145,6 +148,9 @@ class _EditTodoDialogState extends ConsumerState<_EditTodoDialog> {
     _titleCtrl = TextEditingController(text: widget.task.title);
     _descCtrl = TextEditingController(text: widget.task.description ?? '');
     _priority = widget.task.priority;
+    _dueDate = widget.task.dueDate != null
+        ? DateTime.tryParse(widget.task.dueDate!)?.toLocal()
+        : null;
   }
 
   @override
@@ -154,6 +160,28 @@ class _EditTodoDialogState extends ConsumerState<_EditTodoDialog> {
     super.dispose();
   }
 
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dueDate ?? DateTime.now().add(const Duration(days: 2)),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: CatppuccinMocha.mauve,
+            onPrimary: CatppuccinMocha.base,
+            surface: CatppuccinMocha.surface0,
+            onSurface: CatppuccinMocha.text,
+          ),
+          dialogTheme: const DialogThemeData(backgroundColor: CatppuccinMocha.base),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _dueDate = picked);
+  }
+
   Future<void> _save() async {
     final title = _titleCtrl.text.trim();
     if (title.isEmpty) return;
@@ -161,6 +189,7 @@ class _EditTodoDialogState extends ConsumerState<_EditTodoDialog> {
       'title': title,
       'description': _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
       'priority': _priority,
+      'dueDate': _dueDate?.toIso8601String(),
     });
     if (mounted) Navigator.of(context).pop();
   }
@@ -284,6 +313,63 @@ class _EditTodoDialogState extends ConsumerState<_EditTodoDialog> {
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
+
+              // Due date
+              const Text('Due Date',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: CatppuccinMocha.subtext1)),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: _pickDate,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: CatppuccinMocha.surface0,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: CatppuccinMocha.surface2),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.calendar_today,
+                                size: 14, color: CatppuccinMocha.mauve),
+                            const SizedBox(width: 8),
+                            Text(
+                              _dueDate != null
+                                  ? DateFormat('MMM d, yyyy').format(_dueDate!)
+                                  : 'Set due date',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: _dueDate != null
+                                    ? CatppuccinMocha.text
+                                    : CatppuccinMocha.overlay0,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (_dueDate != null) ...[
+                    const SizedBox(width: 8),
+                    Tooltip(
+                      message: 'Clear due date',
+                      child: IconButton(
+                        icon: const Icon(Icons.close,
+                            size: 16, color: CatppuccinMocha.overlay0),
+                        onPressed: () => setState(() => _dueDate = null),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
               const SizedBox(height: 20),
 
               // Buttons
@@ -372,6 +458,19 @@ class _TodoCard extends ConsumerWidget {
         ? DateFormat('MMM d, yyyy').format(createdAt)
         : null;
 
+    final dueDate = task.dueDate != null ? DateTime.tryParse(task.dueDate!)?.toLocal() : null;
+    final now = DateTime.now();
+    final dueLabel = dueDate != null ? DateFormat('MMM d, yyyy').format(dueDate) : null;
+    final isOverdue = dueDate != null && !isDone &&
+        dueDate.isBefore(DateTime(now.year, now.month, now.day));
+    final isDueToday = dueDate != null && !isDone &&
+        dueDate.year == now.year && dueDate.month == now.month && dueDate.day == now.day;
+    final dueLabelColor = isOverdue
+        ? CatppuccinMocha.red
+        : isDueToday
+            ? CatppuccinMocha.peach
+            : CatppuccinMocha.subtext0;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -457,8 +556,8 @@ class _TodoCard extends ConsumerWidget {
                   ),
                 ],
 
-                // Meeting name + created date
-                if (meetingName != null || createdLabel != null) ...[
+                // Meeting name + created date + due date
+                if (meetingName != null || createdLabel != null || dueLabel != null) ...[
                   const SizedBox(height: 6),
                   const Divider(height: 1, color: CatppuccinMocha.surface1),
                   const SizedBox(height: 6),
@@ -496,6 +595,27 @@ class _TodoCard extends ConsumerWidget {
                               style: const TextStyle(
                                   fontSize: 11,
                                   color: CatppuccinMocha.subtext0),
+                            ),
+                          ],
+                        ),
+                      if (dueLabel != null)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isOverdue ? Icons.warning_amber_rounded : Icons.flag_outlined,
+                              size: 11,
+                              color: dueLabelColor,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Due $dueLabel',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: dueLabelColor,
+                                  fontWeight: isOverdue || isDueToday
+                                      ? FontWeight.w600
+                                      : FontWeight.normal),
                             ),
                           ],
                         ),
