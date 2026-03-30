@@ -118,7 +118,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                   final ov = tzOverrides[e.id];
                   final start = ov != null ? parseToLocal(ov['start']!) : parseToLocal(e.start);
                   return _isSameDay(start, _selectedDate) && !isLeaveEvent(e.title);
-                }).toList();
+                }).toList()
+                  ..sort((a, b) {
+                    final aOv = tzOverrides[a.id];
+                    final bOv = tzOverrides[b.id];
+                    final aStart = aOv != null ? parseToLocal(aOv['start']!) : parseToLocal(a.start);
+                    final bStart = bOv != null ? parseToLocal(bOv['start']!) : parseToLocal(b.start);
+                    return aStart.compareTo(bStart);
+                  });
 
                 final now = DateTime.now();
                 final missingCount = dayEvents.where((e) {
