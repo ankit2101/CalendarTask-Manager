@@ -4,8 +4,6 @@ export enum IpcChannel {
   REFRESH_EVENTS = 'calendar:refresh',
 
   // Accounts
-  ADD_MICROSOFT_ACCOUNT = 'auth:add-microsoft',
-  ADD_GOOGLE_ACCOUNT = 'auth:add-google',
   ADD_ICS_ACCOUNT = 'auth:add-ics',
   REMOVE_ACCOUNT = 'auth:remove',
   GET_ACCOUNTS = 'auth:get-accounts',

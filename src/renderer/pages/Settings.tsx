@@ -1,21 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { AppSettings } from '../../shared/types/settings';
-import { PlannerPlan, PlannerBucket } from '../../shared/types/planner';
-import { MicrosoftAccountRecord } from '../../shared/types/account';
 
 export default function Settings() {
   const [settings, setSettings] = useState<Partial<AppSettings>>({});
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [backupStatus, setBackupStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [msAccounts, setMsAccounts] = useState<MicrosoftAccountRecord[]>([]);
-  const [plans, setPlans] = useState<PlannerPlan[]>([]);
-  const [buckets, setBuckets] = useState<PlannerBucket[]>([]);
 
   // Credential fields (not stored in settings, go to Keychain)
-  const [msClientId, setMsClientId] = useState('');
-  const [googleClientId, setGoogleClientId] = useState('');
-  const [googleClientSecret, setGoogleClientSecret] = useState('');
   const [claudeApiKey, setClaudeApiKey] = useState('');
 
   useEffect(() => {
@@ -26,38 +18,8 @@ export default function Settings() {
     try {
       const s = await window.api.getSettings() as AppSettings;
       setSettings(s);
-
-      const accs = await window.api.getAccounts() as { microsoft: MicrosoftAccountRecord[] };
-      setMsAccounts(accs.microsoft ?? []);
-
-      if (s.defaultPlannerAccountId) {
-        const p = await window.api.getPlans(s.defaultPlannerAccountId) as PlannerPlan[];
-        setPlans(p);
-
-        if (s.defaultPlanId) {
-          const b = await window.api.getBuckets(s.defaultPlanId, s.defaultPlannerAccountId) as PlannerBucket[];
-          setBuckets(b);
-        }
-      }
     } catch (e) {
       setError((e as Error).message);
-    }
-  }
-
-  async function handlePlannerAccountChange(accountId: string) {
-    setSettings(s => ({ ...s, defaultPlannerAccountId: accountId, defaultPlanId: null, defaultBucketId: null }));
-    setBuckets([]);
-    if (accountId) {
-      const p = await window.api.getPlans(accountId) as PlannerPlan[];
-      setPlans(p);
-    }
-  }
-
-  async function handlePlanChange(planId: string) {
-    setSettings(s => ({ ...s, defaultPlanId: planId, defaultBucketId: null }));
-    if (planId && settings.defaultPlannerAccountId) {
-      const b = await window.api.getBuckets(planId, settings.defaultPlannerAccountId) as PlannerBucket[];
-      setBuckets(b);
     }
   }
 
@@ -102,9 +64,6 @@ export default function Settings() {
     try {
       setError('');
       const payload: Record<string, unknown> = { ...settings };
-      if (msClientId) payload.msClientId = msClientId;
-      if (googleClientId) payload.googleClientId = googleClientId;
-      if (googleClientSecret) payload.googleClientSecret = googleClientSecret;
       if (claudeApiKey) payload.claudeApiKey = claudeApiKey;
 
       await window.api.saveSettings(payload);
@@ -112,9 +71,6 @@ export default function Settings() {
       setTimeout(() => setSaved(false), 3000);
 
       // Reset credential fields after save
-      setMsClientId('');
-      setGoogleClientId('');
-      setGoogleClientSecret('');
       setClaudeApiKey('');
     } catch (e) {
       setError((e as Error).message);
@@ -144,76 +100,6 @@ export default function Settings() {
           value={claudeApiKey}
           onChange={e => setClaudeApiKey(e.target.value)}
         />
-
-        <label style={styles.label}>Microsoft Azure Client ID</label>
-        <input
-          type="text"
-          style={styles.input}
-          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-          value={msClientId}
-          onChange={e => setMsClientId(e.target.value)}
-        />
-
-        <label style={styles.label}>Google OAuth Client ID</label>
-        <input
-          type="text"
-          style={styles.input}
-          placeholder="xxxxxxxx.apps.googleusercontent.com"
-          value={googleClientId}
-          onChange={e => setGoogleClientId(e.target.value)}
-        />
-
-        <label style={styles.label}>Google OAuth Client Secret</label>
-        <input
-          type="password"
-          style={styles.input}
-          placeholder="GOCSPX-…"
-          value={googleClientSecret}
-          onChange={e => setGoogleClientSecret(e.target.value)}
-        />
-      </section>
-
-      {/* Microsoft Planner */}
-      <section style={styles.section}>
-        <div style={styles.sectionTitle}>Microsoft Planner</div>
-
-        <label style={styles.label}>Planner Account</label>
-        <select
-          style={styles.select}
-          value={settings.defaultPlannerAccountId ?? ''}
-          onChange={e => handlePlannerAccountChange(e.target.value)}
-        >
-          <option value="">— Select account —</option>
-          {msAccounts.map(a => (
-            <option key={a.id} value={a.id}>{a.displayName} ({a.email})</option>
-          ))}
-        </select>
-
-        <label style={styles.label}>Default Plan</label>
-        <select
-          style={styles.select}
-          value={settings.defaultPlanId ?? ''}
-          onChange={e => handlePlanChange(e.target.value)}
-          disabled={!plans.length}
-        >
-          <option value="">— Select plan —</option>
-          {plans.map(p => (
-            <option key={p.id} value={p.id}>{p.groupName ? `${p.groupName} / ` : ''}{p.title}</option>
-          ))}
-        </select>
-
-        <label style={styles.label}>Default Bucket</label>
-        <select
-          style={styles.select}
-          value={settings.defaultBucketId ?? ''}
-          onChange={e => update('defaultBucketId', e.target.value)}
-          disabled={!buckets.length}
-        >
-          <option value="">— Select bucket —</option>
-          {buckets.map(b => (
-            <option key={b.id} value={b.id}>{b.name}</option>
-          ))}
-        </select>
       </section>
 
       {/* Meeting Detection */}

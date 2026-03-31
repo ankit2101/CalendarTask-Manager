@@ -4,7 +4,7 @@ import * as path from 'path';
 import { AppStoreSchema, DEFAULT_STORE } from './schema';
 import { AppSettings } from '../../shared/types/settings';
 import { MeetingRecord } from '../../shared/types/calendar';
-import { MicrosoftAccountRecord, GoogleAccountRecord, ICSAccountRecord } from '../../shared/types/account';
+import { ICSAccountRecord } from '../../shared/types/account';
 import { TodoTask } from '../../shared/types/todo';
 
 
@@ -40,36 +40,6 @@ export const appStore = {
   },
 
   // Accounts
-  getMicrosoftAccounts(): MicrosoftAccountRecord[] {
-    return store.get('accounts.microsoft', []);
-  },
-  saveMicrosoftAccount(account: MicrosoftAccountRecord): void {
-    const accounts = store.get('accounts.microsoft', []);
-    const idx = accounts.findIndex(a => a.id === account.id);
-    if (idx >= 0) accounts[idx] = account;
-    else accounts.push(account);
-    store.set('accounts.microsoft', accounts);
-  },
-  removeMicrosoftAccount(id: string): void {
-    const accounts = store.get('accounts.microsoft', []).filter(a => a.id !== id);
-    store.set('accounts.microsoft', accounts);
-  },
-
-  getGoogleAccounts(): GoogleAccountRecord[] {
-    return store.get('accounts.google', []);
-  },
-  saveGoogleAccount(account: GoogleAccountRecord): void {
-    const accounts = store.get('accounts.google', []);
-    const idx = accounts.findIndex(a => a.id === account.id);
-    if (idx >= 0) accounts[idx] = account;
-    else accounts.push(account);
-    store.set('accounts.google', accounts);
-  },
-  removeGoogleAccount(id: string): void {
-    const accounts = store.get('accounts.google', []).filter(a => a.id !== id);
-    store.set('accounts.google', accounts);
-  },
-
   getICSAccounts(): ICSAccountRecord[] {
     return store.get('accounts.ics', []);
   },

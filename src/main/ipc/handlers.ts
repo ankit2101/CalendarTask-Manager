@@ -2,8 +2,6 @@ import { ipcMain, BrowserWindow } from 'electron';
 import { IpcChannel } from '../../shared/types/ipc-channels';
 import { appStore } from '../store/app-store';
 import { getICSEvents } from '../services/calendar/ics-calendar';
-import { getMicrosoftAuth, initMicrosoftAuth } from '../services/auth/microsoft-auth';
-import { getGoogleAuth } from '../services/auth/google-auth';
 import { getCalendarManager } from '../services/calendar/calendar-manager';
 import { getMeetingDetector } from '../services/meeting/meeting-detector';
 import { extractActionItems, resetClaudeClient } from '../services/ai/claude-client';
@@ -30,25 +28,8 @@ export function registerIpcHandlers(): void {
   // --- Accounts ---
   ipcMain.handle(IpcChannel.GET_ACCOUNTS, () => {
     return {
-      microsoft: appStore.getMicrosoftAccounts(),
-      google: appStore.getGoogleAccounts(),
       ics: appStore.getICSAccounts(),
     };
-  });
-
-  ipcMain.handle(IpcChannel.ADD_MICROSOFT_ACCOUNT, async () => {
-    const auth = getMicrosoftAuth();
-    if (!auth) throw new Error('Microsoft auth not configured. Set clientId in Settings first.');
-    const account = await auth.addAccount();
-    appStore.saveMicrosoftAccount(account);
-    return account;
-  });
-
-  ipcMain.handle(IpcChannel.ADD_GOOGLE_ACCOUNT, async () => {
-    const googleAuth = getGoogleAuth();
-    const account = await googleAuth.addAccount();
-    appStore.saveGoogleAccount(account);
-    return account;
   });
 
   ipcMain.handle(IpcChannel.ADD_ICS_ACCOUNT, async (_, { url, displayName }: { url: string; displayName: string }) => {
@@ -66,18 +47,8 @@ export function registerIpcHandlers(): void {
     return account;
   });
 
-  ipcMain.handle(IpcChannel.REMOVE_ACCOUNT, async (_, { provider, id }: { provider: 'microsoft' | 'google' | 'ics'; id: string }) => {
-    if (provider === 'microsoft') {
-      const auth = getMicrosoftAuth();
-      if (auth) await auth.removeAccount(id);
-      appStore.removeMicrosoftAccount(id);
-    } else if (provider === 'google') {
-      const googleAuth = getGoogleAuth();
-      await googleAuth.removeAccount(id);
-      appStore.removeGoogleAccount(id);
-    } else {
-      appStore.removeICSAccount(id);
-    }
+  ipcMain.handle(IpcChannel.REMOVE_ACCOUNT, async (_, { id }: { provider: 'ics'; id: string }) => {
+    appStore.removeICSAccount(id);
     return true;
   });
 
@@ -176,24 +147,6 @@ export function registerIpcHandlers(): void {
       resetClaudeClient();
       delete settings.claudeApiKey;
     }
-    if (settings.msClientId !== undefined) {
-      await tokenStore.saveSecret('ms-client-id', settings.msClientId);
-      initMicrosoftAuth(settings.msClientId);
-      delete settings.msClientId;
-    }
-    if (settings.googleClientId !== undefined) {
-      await tokenStore.saveSecret('google-client-id', settings.googleClientId);
-      delete settings.googleClientId;
-    }
-    if (settings.googleClientSecret !== undefined) {
-      await tokenStore.saveSecret('google-client-secret', settings.googleClientSecret);
-      getGoogleAuth().setCredentials({
-        clientId: settings.googleClientId ?? (await tokenStore.loadSecret('google-client-id') ?? ''),
-        clientSecret: settings.googleClientSecret,
-      });
-      delete settings.googleClientSecret;
-    }
-
     appStore.saveSettings(settings);
     return true;
   });

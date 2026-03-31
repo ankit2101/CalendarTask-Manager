@@ -7,9 +7,6 @@ import { openQuickNoteWindow } from './main/windows/quick-note-window';
 import { getMeetingDetector } from './main/services/meeting/meeting-detector';
 import { getCalendarManager } from './main/services/calendar/calendar-manager';
 import { appStore } from './main/store/app-store';
-import { initMicrosoftAuth } from './main/services/auth/microsoft-auth';
-import { getGoogleAuth } from './main/services/auth/google-auth';
-import { tokenStore } from './main/services/auth/token-store';
 import { IpcChannel } from './shared/types/ipc-channels';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -23,30 +20,6 @@ async function initializeApp(): Promise<void> {
   // macOS: run as menu bar app (no dock icon by default)
   if (process.platform === 'darwin' && !settings.showDockIcon) {
     app.dock?.hide();
-  }
-
-  // Initialize Microsoft auth if clientId is stored
-  const msClientId = await tokenStore.loadSecret('ms-client-id');
-  if (msClientId) {
-    initMicrosoftAuth(msClientId);
-  }
-
-  // Initialize Google auth credentials if stored
-  const googleClientId = await tokenStore.loadSecret('google-client-id');
-  const googleClientSecret = await tokenStore.loadSecret('google-client-secret');
-  if (googleClientId && googleClientSecret) {
-    const googleAuth = getGoogleAuth();
-    googleAuth.setCredentials({ clientId: googleClientId, clientSecret: googleClientSecret });
-
-    // Restore existing Google accounts
-    const googleAccounts = appStore.getGoogleAccounts();
-    for (const account of googleAccounts) {
-      try {
-        await googleAuth.restoreAccount(account.id);
-      } catch (e) {
-        console.warn(`Failed to restore Google account ${account.email}:`, e);
-      }
-    }
   }
 
   // Register IPC handlers
@@ -67,9 +40,7 @@ async function initializeApp(): Promise<void> {
   app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
 
   // Start meeting detector (only if we have accounts)
-  const hasAccounts =
-    appStore.getMicrosoftAccounts().length > 0 ||
-    appStore.getGoogleAccounts().length > 0;
+  const hasAccounts = appStore.getICSAccounts().length > 0;
 
   if (hasAccounts) {
     setupMeetingEventForwarding();
