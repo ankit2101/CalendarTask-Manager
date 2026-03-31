@@ -171,6 +171,8 @@ class AppDatabase {
   }
 
   static Future<String> getDataFilePath() async {
+    // Prefer the live instance's resolved path — it is always authoritative.
+    if (_instance != null) return _instance!._dataFilePath;
     final dir = await getDataDirectoryPath();
     return '$dir/$_kDataFileName';
   }
@@ -201,16 +203,23 @@ class AppDatabase {
       }
       await File(newPath).writeAsString(jsonEncode(inst._data), flush: true);
     }
+    // Always clear the old bookmark FIRST. If we don't, a failed bookmark
+    // write leaves the stale bookmark in prefs and _resolveDataFilePath will
+    // later overwrite _kDataDirKey back to the old path, undoing our change.
     await prefs.setString(_kDataDirKey, newDir);
+    await prefs.remove(_kBookmarkKey);
 
-    // Save a security-scoped bookmark so access persists after restart (macOS).
+    // Try to save a security-scoped bookmark so sandbox access persists after
+    // restart. This may fail on ad-hoc signed builds (no real Team ID) — that
+    // is fine because we already saved the plain path above as fallback.
     if (Platform.isMacOS) {
       try {
         final bookmarks = SecureBookmarks();
         final bookmark = await bookmarks.bookmark(Directory(newDir));
         await prefs.setString(_kBookmarkKey, bookmark);
+        debugPrint('[DB] Bookmark saved for $newDir');
       } catch (e) {
-        debugPrint('[DB] Failed to save bookmark: $e');
+        debugPrint('[DB] Bookmark creation failed (using path fallback): $e');
       }
     }
 
