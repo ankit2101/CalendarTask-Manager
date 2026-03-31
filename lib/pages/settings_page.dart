@@ -20,18 +20,18 @@ class SettingsPage extends ConsumerStatefulWidget {
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   final _apiKeyController = TextEditingController();
   bool _apiKeyObscured = true;
-  String? _dataDirectory;
+  String? _dataFilePath;
 
   @override
   void initState() {
     super.initState();
     _loadApiKey();
-    _loadDataDirectory();
+    _loadDataFilePath();
   }
 
-  Future<void> _loadDataDirectory() async {
-    final dir = await AppDatabase.getDataDirectoryPath();
-    if (mounted) setState(() => _dataDirectory = dir);
+  Future<void> _loadDataFilePath() async {
+    final path = await AppDatabase.getDataFilePath();
+    if (mounted) setState(() => _dataFilePath = path);
   }
 
   Future<void> _loadApiKey() async {
@@ -316,56 +316,72 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             const SizedBox(height: 24),
             const Divider(),
             const SizedBox(height: 16),
-            const Text('Storage', style: TextStyle(fontWeight: FontWeight.w600, color: CatppuccinMocha.text)),
+            const Text('Sync File', style: TextStyle(fontWeight: FontWeight.w600, color: CatppuccinMocha.text)),
             const SizedBox(height: 4),
             const Text(
-              'Location where accounts, meeting history, and tasks are stored. Move to iCloud Drive or Dropbox to sync across Macs.',
+              'Point all your Macs to the same file in iCloud Drive or Dropbox and the app will sync automatically whenever it changes.',
               style: TextStyle(fontSize: 13, color: CatppuccinMocha.overlay0),
             ),
+            const SizedBox(height: 4),
+            const Text(
+              'The data file is always named calendartask_data.json. Choose the folder where it lives.',
+              style: TextStyle(fontSize: 12, color: CatppuccinMocha.overlay0),
+            ),
             const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                    decoration: BoxDecoration(
-                      color: CatppuccinMocha.surface0,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: CatppuccinMocha.surface2),
-                    ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: CatppuccinMocha.surface0,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: CatppuccinMocha.surface2),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.insert_drive_file_outlined, size: 14, color: CatppuccinMocha.overlay0),
+                  const SizedBox(width: 6),
+                  Expanded(
                     child: Text(
-                      _dataDirectory ?? '…',
-                      style: const TextStyle(fontSize: 13, color: CatppuccinMocha.text),
+                      _dataFilePath ?? '…',
+                      style: const TextStyle(fontSize: 12, color: CatppuccinMocha.text),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                ElevatedButton.icon(
                   onPressed: () async {
                     final picked = await FilePicker.platform.getDirectoryPath(
-                      dialogTitle: 'Choose Data File Location',
+                      dialogTitle: 'Choose Sync Folder',
                     );
                     if (picked == null) return;
                     await AppDatabase.changeDataDirectory(picked);
-                    setState(() => _dataDirectory = picked);
                     // Reload all data providers from new location
                     final db = await AppDatabase.getInstance();
+                    // Re-activate watcher on new path
+                    ref.read(syncWatcherProvider);
                     ref.read(settingsProvider.notifier).update(db.getSettings());
                     ref.read(meetingHistoryProvider.notifier).reload();
                     ref.read(todosProvider.notifier).reload();
                     ref.read(accountsProvider.notifier).reload();
                     ref.read(dismissedMeetingsProvider.notifier).reload();
+                    ref.read(eventTimeOverridesProvider.notifier).reload();
+                    final newPath = await AppDatabase.getDataFilePath();
+                    setState(() => _dataFilePath = newPath);
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Data location set to $picked'),
-                          duration: const Duration(seconds: 5),
+                          content: Text('Sync folder set. Data file: $newPath'),
+                          duration: const Duration(seconds: 6),
                         ),
                       );
                     }
                   },
-                  child: const Text('Choose Directory'),
+                  icon: const Icon(Icons.folder_open, size: 16),
+                  label: const Text('Choose Folder'),
                 ),
               ],
             ),

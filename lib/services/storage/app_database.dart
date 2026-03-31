@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -20,6 +21,16 @@ class AppDatabase {
   late Map<String, dynamic> _data;
   late String _dataFilePath;
 
+  // File watcher
+  StreamSubscription<FileSystemEvent>? _watcherSubscription;
+  final StreamController<void> _externalChangeController =
+      StreamController<void>.broadcast();
+  bool _writingInternally = false;
+  Timer? _debounceTimer;
+
+  /// Fires whenever another process/machine modifies the data file.
+  Stream<void> get externalChanges => _externalChangeController.stream;
+
   AppDatabase._();
 
   static Future<AppDatabase> getInstance() {
@@ -32,6 +43,7 @@ class AppDatabase {
     db._prefs = await SharedPreferences.getInstance();
     db._dataFilePath = await _resolveDataFilePath(db._prefs);
     await db._loadData();
+    db._startWatcher();
     _instance = db;
     return db;
   }
@@ -94,7 +106,56 @@ class AppDatabase {
   }
 
   Future<void> _save() async {
+    _writingInternally = true;
     await File(_dataFilePath).writeAsString(jsonEncode(_data), flush: true);
+    // Allow extra time for the OS / sync daemon to process our own write
+    // before we start treating file events as external changes.
+    Future.delayed(const Duration(seconds: 3), () {
+      _writingInternally = false;
+    });
+  }
+
+  // --- File watcher ---
+
+  void _startWatcher() {
+    _watcherSubscription?.cancel();
+    _watcherSubscription = null;
+
+    final parentDir = File(_dataFilePath).parent;
+    try {
+      _watcherSubscription = parentDir
+          .watch(events: FileSystemEvent.modify)
+          .listen(_onFileSystemEvent, onError: (e) {
+        debugPrint('[DB] Watcher error: $e');
+      });
+      debugPrint('[DB] Watching ${parentDir.path} for changes to $_kDataFileName');
+    } catch (e) {
+      debugPrint('[DB] Could not start file watcher: $e');
+    }
+  }
+
+  void _onFileSystemEvent(FileSystemEvent event) {
+    if (event.path != _dataFilePath) return;
+    if (_writingInternally) return;
+
+    // Debounce: iCloud/Dropbox may fire several events per sync cycle.
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 800), () async {
+      await _reloadExternally();
+    });
+  }
+
+  Future<void> _reloadExternally() async {
+    final file = File(_dataFilePath);
+    if (!file.existsSync()) return;
+    try {
+      final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      _data = json;
+      debugPrint('[DB] Reloaded data from external change');
+      _externalChangeController.add(null);
+    } catch (e) {
+      debugPrint('[DB] External reload failed: $e');
+    }
   }
 
   // --- Static helpers for data directory management ---
@@ -109,12 +170,35 @@ class AppDatabase {
     return dir;
   }
 
+  static Future<String> getDataFilePath() async {
+    final dir = await getDataDirectoryPath();
+    return '$dir/$_kDataFileName';
+  }
+
   static Future<void> changeDataDirectory(String newDir) async {
     // Write current data to new location
     final prefs = await SharedPreferences.getInstance();
     final inst = _instance;
     if (inst != null) {
       final newPath = '$newDir/$_kDataFileName';
+      // If the target already has data, merge: keep existing records and
+      // overlay with our local ones so nothing is lost.
+      final targetFile = File(newPath);
+      if (targetFile.existsSync()) {
+        try {
+          final existing = jsonDecode(targetFile.readAsStringSync()) as Map<String, dynamic>;
+          // Merge: prefer existing data for keys present in both, then add ours.
+          final merged = Map<String, dynamic>.from(existing);
+          for (final entry in inst._data.entries) {
+            if (!merged.containsKey(entry.key)) {
+              merged[entry.key] = entry.value;
+            }
+          }
+          inst._data = merged;
+        } catch (_) {
+          // If target is corrupt, overwrite with our data.
+        }
+      }
       await File(newPath).writeAsString(jsonEncode(inst._data), flush: true);
     }
     await prefs.setString(_kDataDirKey, newDir);
@@ -134,6 +218,9 @@ class AppDatabase {
   }
 
   static void resetInstance() {
+    _instance?._watcherSubscription?.cancel();
+    _instance?._debounceTimer?.cancel();
+    _instance?._externalChangeController.close();
     _initFuture = null;
     _instance = null;
   }
