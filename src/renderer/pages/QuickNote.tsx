@@ -1,8 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { NormalizedEvent, ActionItem } from '../../shared/types/calendar';
-import { AppSettings } from '../../shared/types/settings';
-import { PlannerPlan, PlannerBucket } from '../../shared/types/planner';
-import { MicrosoftAccountRecord } from '../../shared/types/account';
 
 type Step = 'note' | 'extracting' | 'review' | 'submitting' | 'done' | 'error';
 
@@ -17,50 +14,12 @@ export default function QuickNote() {
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [error, setError] = useState('');
 
-  // Planner selection
-  const [msAccounts, setMsAccounts] = useState<MicrosoftAccountRecord[]>([]);
-  const [plans, setPlans] = useState<PlannerPlan[]>([]);
-  const [buckets, setBuckets] = useState<PlannerBucket[]>([]);
-  const [selectedAccountId, setSelectedAccountId] = useState('');
-  const [selectedPlanId, setSelectedPlanId] = useState('');
-  const [selectedBucketId, setSelectedBucketId] = useState('');
-
   // Listen for meeting-ended event from main process
   useEffect(() => {
     const unsubscribe = window.api?.onMeetingEnded?.((ev: NormalizedEvent) => {
       setEvent(ev);
     });
     return () => unsubscribe?.();
-  }, []);
-
-  // Load default planner settings
-  useEffect(() => {
-    async function loadDefaults() {
-      try {
-        const settings = await window.api.getSettings() as AppSettings;
-        const accs = await window.api.getAccounts() as { microsoft: MicrosoftAccountRecord[] };
-        setMsAccounts(accs.microsoft ?? []);
-
-        if (settings.defaultPlannerAccountId) {
-          setSelectedAccountId(settings.defaultPlannerAccountId);
-          const p = await window.api.getPlans(settings.defaultPlannerAccountId) as PlannerPlan[];
-          setPlans(p);
-
-          if (settings.defaultPlanId) {
-            setSelectedPlanId(settings.defaultPlanId);
-            const b = await window.api.getBuckets(settings.defaultPlanId, settings.defaultPlannerAccountId) as PlannerBucket[];
-            setBuckets(b);
-
-            if (settings.defaultBucketId) {
-              setSelectedBucketId(settings.defaultBucketId);
-            }
-          }
-        }
-      } catch (e) {
-        console.error('Failed to load planner defaults:', e);
-      }
-    }
-    loadDefaults();
   }, []);
 
   const handleExtract = useCallback(async () => {
@@ -95,20 +54,15 @@ export default function QuickNote() {
       setError('No meeting context. Cannot save note.');
       return;
     }
-    // Only require Planner selection when there are action items to push
-    if (actionItems.length > 0 && msAccounts.length > 0 && (!selectedPlanId || !selectedBucketId || !selectedAccountId)) {
-      setError('Please select a Planner plan and bucket before submitting.');
-      return;
-    }
     setStep('submitting');
     try {
       await window.api.submitNote({
         event,
         note,
         actionItems,
-        planId: selectedPlanId,
-        bucketId: selectedBucketId,
-        accountId: selectedAccountId,
+        planId: '',
+        bucketId: '',
+        accountId: '',
       });
       setStep('done');
       setTimeout(() => window.close(), 1500);
@@ -116,7 +70,7 @@ export default function QuickNote() {
       setError((e as Error).message);
       setStep('error');
     }
-  }, [event, note, actionItems, selectedPlanId, selectedBucketId, selectedAccountId]);
+  }, [event, note, actionItems]);
 
   const updateActionItem = (id: string, updates: Partial<ActionItem>) => {
     setActionItems(items => items.map(item => item.id === id ? { ...item, ...updates } : item));
@@ -132,7 +86,7 @@ export default function QuickNote() {
       {/* Title bar drag region */}
       <div style={styles.titleBar}>
         <span style={styles.windowTitle}>
-          {step === 'done' ? '✓ Tasks added to Planner' : 'Meeting Note'}
+          {step === 'done' ? '✓ Note saved' : 'Meeting Note'}
         </span>
         <button style={styles.closeBtn} onClick={handleDismiss}>✕</button>
       </div>
@@ -219,78 +173,20 @@ export default function QuickNote() {
               ))}
             </div>
 
-            {/* Planner target selection */}
-            {msAccounts.length > 0 && (
-              <div style={styles.plannerSection}>
-                <select
-                  style={styles.plannerSelect}
-                  value={selectedAccountId}
-                  onChange={async e => {
-                    setSelectedAccountId(e.target.value);
-                    setSelectedPlanId('');
-                    setSelectedBucketId('');
-                    if (e.target.value) {
-                      const p = await window.api.getPlans(e.target.value) as PlannerPlan[];
-                      setPlans(p);
-                    }
-                  }}
-                >
-                  <option value="">Account…</option>
-                  {msAccounts.map(a => <option key={a.id} value={a.id}>{a.email}</option>)}
-                </select>
-                <select
-                  style={styles.plannerSelect}
-                  value={selectedPlanId}
-                  disabled={!plans.length}
-                  onChange={async e => {
-                    setSelectedPlanId(e.target.value);
-                    setSelectedBucketId('');
-                    if (e.target.value && selectedAccountId) {
-                      const b = await window.api.getBuckets(e.target.value, selectedAccountId) as PlannerBucket[];
-                      setBuckets(b);
-                    }
-                  }}
-                >
-                  <option value="">Plan…</option>
-                  {plans.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
-                </select>
-                <select
-                  style={styles.plannerSelect}
-                  value={selectedBucketId}
-                  disabled={!buckets.length}
-                  onChange={e => setSelectedBucketId(e.target.value)}
-                >
-                  <option value="">Bucket…</option>
-                  {buckets.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
-              </div>
-            )}
-
             <div style={styles.actions}>
               <button style={styles.btnSecondary} onClick={() => { setStep('note'); setError(''); }}>
                 ← Back
               </button>
-              {(() => {
-                const needsPlanner = actionItems.length > 0 && msAccounts.length > 0;
-                const plannerReady = !!(selectedAccountId && selectedPlanId && selectedBucketId);
-                const isDisabled = needsPlanner && !plannerReady;
-                return (
-                  <button
-                    style={isDisabled ? styles.btnDisabled : styles.btnPrimary}
-                    onClick={handleSubmit}
-                    disabled={isDisabled}
-                  >
-                    {actionItems.length > 0 ? 'Add to Planner →' : 'Save Note'}
-                  </button>
-                );
-              })()}
+              <button style={styles.btnPrimary} onClick={handleSubmit}>
+                Save Note
+              </button>
             </div>
           </>
         )}
 
         {/* Step: Submitting */}
         {step === 'submitting' && (
-          <div style={styles.centered}>Adding tasks to Microsoft Planner…</div>
+          <div style={styles.centered}>Saving note…</div>
         )}
 
         {/* Step: Done */}

@@ -105,6 +105,7 @@ export async function getICSEvents(
   const windowStart = new Date(now.getTime() - hoursBehind * 60 * 60 * 1000);
   const cutoff = new Date(now.getTime() + hoursAhead * 60 * 60 * 1000);
 
+  const onlineKeywords = ['zoom.us', 'teams.microsoft', 'meet.google', 'webex', 'gotomeeting'];
   const events: NormalizedEvent[] = [];
 
   for (const key of Object.keys(data)) {
@@ -119,36 +120,108 @@ export async function getICSEvents(
     if (!(start instanceof Date) || isNaN(start.getTime())) continue;
     if (!(end instanceof Date) || isNaN(end.getTime())) continue;
 
-    // Only include events in the fetch window
-    if (end < windowStart || start > cutoff) continue;
-
     const uid = (entry.uid as string) ?? key;
-    const summary = (entry.summary as string) ?? '(No Title)';
-    const location = (entry.location as string) ?? undefined;
-    const description = (entry.description as string) ?? undefined;
+    const durationMs = end.getTime() - start.getTime();
 
-    const organizer = extractEmail((entry as Record<string, unknown>).organizer);
-    const attendees = extractAttendees((entry as Record<string, unknown>).attendee);
+    // Build exdate set (excluded recurrence dates)
+    const exdates = new Set<string>();
+    const rawExdate = (entry as Record<string, unknown>).exdate;
+    if (rawExdate && typeof rawExdate === 'object') {
+      for (const exDate of Object.values(rawExdate as Record<string, unknown>)) {
+        if (exDate instanceof Date && !isNaN(exDate.getTime())) {
+          exdates.add(exDate.toISOString());
+        }
+      }
+    }
 
-    // Detect online meeting from location or description
-    const onlineKeywords = ['zoom.us', 'teams.microsoft', 'meet.google', 'webex', 'gotomeeting'];
-    const textToCheck = `${location ?? ''} ${description ?? ''}`.toLowerCase();
-    const isOnlineMeeting = onlineKeywords.some(kw => textToCheck.includes(kw));
+    // Build overrides map: original occurrence date -> override VEVENT
+    const recurrences = (entry as Record<string, unknown>).recurrences as Record<string, typeof entry> | undefined;
 
-    events.push({
-      id: `ics:${uid}`,
-      accountId,
-      provider: 'ics',
-      title: summary,
-      start: start.toISOString(),
-      end: end.toISOString(),
-      attendees,
-      isOnlineMeeting,
-      organizer,
-      location,
-      bodyPreview: description,
-      userResponseStatus: 'none',
-    });
+    const rrule = (entry as Record<string, unknown>).rrule;
+
+    if (rrule && typeof (rrule as { between?: unknown }).between === 'function') {
+      // Recurring event — expand all occurrences in the fetch window
+      let occurrences: Date[];
+      try {
+        occurrences = (rrule as { between: (a: Date, b: Date, inc: boolean) => Date[] }).between(windowStart, cutoff, true);
+      } catch {
+        // rrule expansion failed; fall through to single-event handling below
+        occurrences = [];
+      }
+
+      for (const occStart of occurrences) {
+        if (exdates.has(occStart.toISOString())) continue;
+
+        // Check if this occurrence has an override
+        let occEntry: typeof entry = entry;
+        if (recurrences) {
+          for (const recKey of Object.keys(recurrences)) {
+            const recDate = new Date(recKey);
+            if (!isNaN(recDate.getTime()) && Math.abs(recDate.getTime() - occStart.getTime()) < 86400000) {
+              occEntry = recurrences[recKey];
+              break;
+            }
+          }
+        }
+
+        const occEnd = new Date(occStart.getTime() + durationMs);
+        const recStart = (occEntry.start instanceof Date && !isNaN(occEntry.start.getTime()))
+          ? occEntry.start as Date : occStart;
+        const recEnd = (occEntry.end instanceof Date && !isNaN(occEntry.end.getTime()))
+          ? occEntry.end as Date : occEnd;
+
+        const summary = (occEntry.summary as string) ?? (entry.summary as string) ?? '(No Title)';
+        const location = (occEntry.location as string) ?? (entry.location as string) ?? undefined;
+        const description = (occEntry.description as string) ?? (entry.description as string) ?? undefined;
+        const organizer = extractEmail((occEntry as Record<string, unknown>).organizer)
+          || extractEmail((entry as Record<string, unknown>).organizer);
+        const attendees = extractAttendees((occEntry as Record<string, unknown>).attendee)
+          || extractAttendees((entry as Record<string, unknown>).attendee);
+        const textToCheck = `${location ?? ''} ${description ?? ''}`.toLowerCase();
+        const isOnlineMeeting = onlineKeywords.some(kw => textToCheck.includes(kw));
+
+        events.push({
+          id: `ics:${uid}:${occStart.getTime()}`,
+          accountId,
+          provider: 'ics',
+          title: summary,
+          start: recStart.toISOString(),
+          end: recEnd.toISOString(),
+          attendees,
+          isOnlineMeeting,
+          organizer,
+          location,
+          bodyPreview: description,
+          userResponseStatus: 'none',
+        });
+      }
+    } else {
+      // Non-recurring event — apply window filter and emit as-is
+      if (end < windowStart || start > cutoff) continue;
+
+      const summary = (entry.summary as string) ?? '(No Title)';
+      const location = (entry.location as string) ?? undefined;
+      const description = (entry.description as string) ?? undefined;
+      const organizer = extractEmail((entry as Record<string, unknown>).organizer);
+      const attendees = extractAttendees((entry as Record<string, unknown>).attendee);
+      const textToCheck = `${location ?? ''} ${description ?? ''}`.toLowerCase();
+      const isOnlineMeeting = onlineKeywords.some(kw => textToCheck.includes(kw));
+
+      events.push({
+        id: `ics:${uid}`,
+        accountId,
+        provider: 'ics',
+        title: summary,
+        start: start.toISOString(),
+        end: end.toISOString(),
+        attendees,
+        isOnlineMeeting,
+        organizer,
+        location,
+        bodyPreview: description,
+        userResponseStatus: 'none',
+      });
+    }
   }
 
   return events;

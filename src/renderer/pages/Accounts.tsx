@@ -1,14 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { MicrosoftAccountRecord, GoogleAccountRecord, ICSAccountRecord } from '../../shared/types/account';
+import { ICSAccountRecord } from '../../shared/types/account';
 
 interface AccountsState {
-  microsoft: MicrosoftAccountRecord[];
-  google: GoogleAccountRecord[];
   ics: ICSAccountRecord[];
 }
 
 export default function Accounts() {
-  const [accounts, setAccounts] = useState<AccountsState>({ microsoft: [], google: [], ics: [] });
+  const [accounts, setAccounts] = useState<AccountsState>({ ics: [] });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
@@ -32,32 +30,6 @@ export default function Accounts() {
     }
   }
 
-  async function addMicrosoft() {
-    try {
-      setBusy('Adding Microsoft account…');
-      setError('');
-      await window.api.addMicrosoftAccount();
-      await loadAccounts();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy('');
-    }
-  }
-
-  async function addGoogle() {
-    try {
-      setBusy('Adding Google account…');
-      setError('');
-      await window.api.addGoogleAccount();
-      await loadAccounts();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy('');
-    }
-  }
-
   async function addICSFeed() {
     if (!icsUrl.trim()) { setError('Please enter an ICS URL.'); return; }
     if (!icsName.trim()) { setError('Please enter a calendar name.'); return; }
@@ -77,7 +49,7 @@ export default function Accounts() {
     }
   }
 
-  async function removeAccount(provider: 'microsoft' | 'google' | 'ics', id: string) {
+  async function removeAccount(provider: 'ics', id: string) {
     if (!confirm('Remove this account? You can re-add it later.')) return;
     try {
       await window.api.removeAccount(provider, id);
@@ -92,72 +64,10 @@ export default function Accounts() {
   return (
     <div>
       <h1 style={styles.title}>Connected Accounts</h1>
-      <p style={styles.subtitle}>Connect Outlook and Google Calendar accounts to monitor.</p>
+      <p style={styles.subtitle}>Connect calendar feeds to monitor.</p>
 
       {error && <div style={styles.error}>{error}</div>}
       {busy && <div style={styles.info}>{busy}</div>}
-
-      {/* Microsoft accounts */}
-      <section style={styles.section}>
-        <div style={styles.sectionHeader}>
-          <span>🪟 Microsoft / Outlook</span>
-          <button style={styles.addBtn} onClick={addMicrosoft} disabled={!!busy}>
-            + Add Account
-          </button>
-        </div>
-        {accounts.microsoft.length === 0 ? (
-          <p style={styles.empty}>No Microsoft accounts connected.</p>
-        ) : (
-          accounts.microsoft.map(account => (
-            <div key={account.id} style={styles.accountCard}>
-              <div style={styles.avatar}>
-                {account.displayName?.[0]?.toUpperCase() ?? 'M'}
-              </div>
-              <div style={styles.accountInfo}>
-                <div style={styles.accountName}>{account.displayName}</div>
-                <div style={styles.accountEmail}>{account.email}</div>
-              </div>
-              <button
-                style={styles.removeBtn}
-                onClick={() => removeAccount('microsoft', account.id)}
-              >
-                Remove
-              </button>
-            </div>
-          ))
-        )}
-      </section>
-
-      {/* Google accounts */}
-      <section style={styles.section}>
-        <div style={styles.sectionHeader}>
-          <span>🟢 Google Calendar</span>
-          <button style={styles.addBtn} onClick={addGoogle} disabled={!!busy}>
-            + Add Account
-          </button>
-        </div>
-        {accounts.google.length === 0 ? (
-          <p style={styles.empty}>No Google accounts connected.</p>
-        ) : (
-          accounts.google.map(account => (
-            <div key={account.id} style={styles.accountCard}>
-              <div style={{ ...styles.avatar, background: '#a6e3a1' }}>
-                {account.displayName?.[0]?.toUpperCase() ?? 'G'}
-              </div>
-              <div style={styles.accountInfo}>
-                <div style={styles.accountName}>{account.displayName}</div>
-                <div style={styles.accountEmail}>{account.email}</div>
-              </div>
-              <button
-                style={styles.removeBtn}
-                onClick={() => removeAccount('google', account.id)}
-              >
-                Remove
-              </button>
-            </div>
-          ))
-        )}
-      </section>
 
       {/* ICS / Outlook Feed accounts */}
       <section style={styles.section}>

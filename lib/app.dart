@@ -105,6 +105,9 @@ class _CalendarTaskAppState extends ConsumerState<CalendarTaskApp> {
     ref.listen(meetingHistoryProvider, (_, __) => _startPoller());
     ref.listen(dismissedMeetingsProvider, (_, __) => _startPoller());
 
+    // Keep the sync watcher alive for the lifetime of the app.
+    ref.watch(syncWatcherProvider);
+
     return MaterialApp.router(
       title: 'CalendarTask Manager',
       theme: appTheme,

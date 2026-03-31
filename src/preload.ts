@@ -10,11 +10,9 @@ export interface ElectronAPI {
   refreshEvents: () => Promise<NormalizedEvent[]>;
 
   // Accounts
-  getAccounts: () => Promise<{ microsoft: unknown[]; google: unknown[]; ics: unknown[] }>;
-  addMicrosoftAccount: () => Promise<unknown>;
-  addGoogleAccount: () => Promise<unknown>;
+  getAccounts: () => Promise<{ ics: unknown[] }>;
   addICSAccount: (url: string, displayName: string) => Promise<unknown>;
-  removeAccount: (provider: 'microsoft' | 'google' | 'ics', id: string) => Promise<void>;
+  removeAccount: (provider: 'ics', id: string) => Promise<void>;
 
   // Notes + AI
   extractActionItems: (note: string, event: NormalizedEvent) => Promise<ActionItem[]>;
@@ -65,8 +63,6 @@ const api: ElectronAPI = {
   refreshEvents: () => ipcRenderer.invoke(IpcChannel.REFRESH_EVENTS),
 
   getAccounts: () => ipcRenderer.invoke(IpcChannel.GET_ACCOUNTS),
-  addMicrosoftAccount: () => ipcRenderer.invoke(IpcChannel.ADD_MICROSOFT_ACCOUNT),
-  addGoogleAccount: () => ipcRenderer.invoke(IpcChannel.ADD_GOOGLE_ACCOUNT),
   addICSAccount: (url, displayName) => ipcRenderer.invoke(IpcChannel.ADD_ICS_ACCOUNT, { url, displayName }),
   removeAccount: (provider, id) => ipcRenderer.invoke(IpcChannel.REMOVE_ACCOUNT, { provider, id }),
 

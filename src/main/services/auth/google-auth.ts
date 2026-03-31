@@ -2,7 +2,12 @@ import { google, Auth } from 'googleapis';
 import * as http from 'http';
 import { shell } from 'electron';
 import { tokenStore } from './token-store';
-import { GoogleAccountRecord } from '../../../shared/types/account';
+
+interface GoogleAccountRecord {
+  id: string;
+  email: string;
+  displayName: string;
+}
 
 const SCOPES = ['https://www.googleapis.com/auth/calendar.readonly'];
 const REDIRECT_PORT = 3478;

@@ -9,7 +9,6 @@ class IcsCalendarService {
   Future<List<NormalizedEvent>> fetchEvents(String accountId, String url) async {
     // webcal:// is just http/https — normalize it
     final normalized = url.replaceFirst(RegExp(r'^webcal://', caseSensitive: false), 'https://');
-    // Force no-cache so Refresh always fetches fresh data from the server
     final response = await _dio.get(
       normalized,
       options: Options(headers: {
@@ -21,26 +20,32 @@ class IcsCalendarService {
   }
 
   List<NormalizedEvent> parseIcs(String icsData, String accountId) {
-    final events = <NormalizedEvent>[];
-    // Unfold lines (RFC 5545: lines starting with space/tab are continuations)
+    // Unfold continuation lines (RFC 5545)
     final unfolded = icsData.replaceAll(RegExp(r'\r?\n[ \t]'), '');
     final lines = unfolded.split(RegExp(r'\r?\n'));
 
     bool inEvent = false;
     Map<String, String> props = {};
     List<String> attendeeLines = [];
+    List<String> exdateLines = [];
+
+    final rawEvents = <_RawEvent>[];
 
     for (final line in lines) {
       if (line.trim() == 'BEGIN:VEVENT') {
         inEvent = true;
         props = {};
         attendeeLines = [];
+        exdateLines = [];
         continue;
       }
       if (line.trim() == 'END:VEVENT') {
         inEvent = false;
-        final event = _buildEvent(props, attendeeLines, accountId);
-        if (event != null) events.add(event);
+        rawEvents.add(_RawEvent(
+          props: Map.from(props),
+          attendeeLines: List.from(attendeeLines),
+          exdateLines: List.from(exdateLines),
+        ));
         continue;
       }
       if (!inEvent) continue;
@@ -49,55 +54,283 @@ class IcsCalendarService {
         attendeeLines.add(line);
         continue;
       }
+      // Collect all EXDATE lines separately (there may be multiple)
+      if (line.startsWith('EXDATE')) {
+        exdateLines.add(line);
+        continue;
+      }
 
       final colonIdx = line.indexOf(':');
       if (colonIdx == -1) continue;
       final key = line.substring(0, colonIdx);
       final value = line.substring(colonIdx + 1);
-      // Strip parameters for common keys
       final baseKey = key.split(';').first;
       props[baseKey] = value;
-      // Keep full key for datetime parsing
+      // Keep full key (with params) for datetime parsing (e.g. DTSTART;TZID=...)
       if (key != baseKey) props[key] = value;
     }
 
-    // Sort by start time
+    // Separate override events (RECURRENCE-ID present) from base events
+    final overridesByUid = <String, List<_RawEvent>>{};
+    final baseEvents = <_RawEvent>[];
+
+    for (final raw in rawEvents) {
+      if (raw.props.containsKey('RECURRENCE-ID')) {
+        final uid = raw.props['UID'];
+        if (uid != null) {
+          overridesByUid.putIfAbsent(uid, () => []).add(raw);
+        }
+      } else {
+        baseEvents.add(raw);
+      }
+    }
+
+    final now = DateTime.now().toUtc();
+    final windowStart = now.subtract(const Duration(days: 30));
+    final windowEnd = now.add(const Duration(days: 30));
+
+    final events = <NormalizedEvent>[];
+
+    for (final raw in baseEvents) {
+      final uid = raw.props['UID'];
+      if (uid == null) continue;
+
+      final dtStart = _parseDateTimeFromProps(raw.props, 'DTSTART');
+      if (dtStart == null) continue;
+
+      DateTime? dtEnd = _parseDateTimeFromProps(raw.props, 'DTEND');
+      if (dtEnd == null && raw.props.containsKey('DURATION')) {
+        dtEnd = dtStart.add(_parseDuration(raw.props['DURATION']!));
+      }
+      if (dtEnd == null) continue;
+
+      final rrule = raw.props['RRULE'];
+
+      if (rrule != null) {
+        // --- Recurring event: expand all occurrences within the window ---
+        final duration = dtEnd.difference(dtStart);
+        final exdates = _parseExdates(raw.exdateLines);
+
+        // Build override map: recurrence UTC ms → override raw event
+        final overrideMap = <int, _RawEvent>{};
+        for (final ov in overridesByUid[uid] ?? []) {
+          final recId = _parseDateTimeFromProps(ov.props, 'RECURRENCE-ID');
+          if (recId != null) {
+            overrideMap[recId.millisecondsSinceEpoch] = ov;
+          }
+        }
+
+        final occurrences = _expandRRule(dtStart, rrule, windowEnd);
+
+        for (final occStart in occurrences) {
+          if (occStart.isBefore(dtStart)) continue;
+          final occEnd = occStart.add(duration);
+          if (occEnd.isBefore(windowStart)) continue;
+          if (occStart.isAfter(windowEnd)) break;
+
+          // Skip exdated occurrences
+          if (_isExcluded(occStart, exdates)) continue;
+
+          // Check for a modified occurrence (RECURRENCE-ID override)
+          _RawEvent? override;
+          for (final entry in overrideMap.entries) {
+            if ((occStart.millisecondsSinceEpoch - entry.key).abs() < 86400000) {
+              override = entry.value;
+              break;
+            }
+          }
+
+          final instanceId = '${uid}_${occStart.millisecondsSinceEpoch}';
+
+          if (override != null) {
+            final ovStart = _parseDateTimeFromProps(override.props, 'DTSTART') ?? occStart;
+            var ovEnd = _parseDateTimeFromProps(override.props, 'DTEND');
+            if (ovEnd == null && override.props.containsKey('DURATION')) {
+              ovEnd = ovStart.add(_parseDuration(override.props['DURATION']!));
+            }
+            ovEnd ??= ovStart.add(duration);
+            final event = _buildEvent(override.props, override.attendeeLines, accountId,
+                instanceId: instanceId, instanceStart: ovStart, instanceEnd: ovEnd);
+            if (event != null) events.add(event);
+          } else {
+            final event = _buildEvent(raw.props, raw.attendeeLines, accountId,
+                instanceId: instanceId, instanceStart: occStart, instanceEnd: occEnd);
+            if (event != null) events.add(event);
+          }
+        }
+      } else {
+        // --- Non-recurring event: simple window filter ---
+        if (dtEnd.isBefore(windowStart) || dtStart.isAfter(windowEnd)) continue;
+        final event = _buildEvent(raw.props, raw.attendeeLines, accountId);
+        if (event != null) events.add(event);
+      }
+    }
+
     events.sort((a, b) => a.start.compareTo(b.start));
     return events;
   }
 
-  NormalizedEvent? _buildEvent(Map<String, String> props, List<String> attendeeLines, String accountId) {
+  // ---------------------------------------------------------------------------
+  // RRULE expansion
+  // ---------------------------------------------------------------------------
+
+  List<DateTime> _expandRRule(DateTime dtStart, String rrule, DateTime windowEnd) {
+    final params = <String, String>{};
+    for (final part in rrule.split(';')) {
+      final eq = part.indexOf('=');
+      if (eq != -1) {
+        params[part.substring(0, eq).toUpperCase()] = part.substring(eq + 1).trim();
+      }
+    }
+
+    final freq = params['FREQ']?.toUpperCase() ?? 'WEEKLY';
+    final interval = int.tryParse(params['INTERVAL'] ?? '1') ?? 1;
+    final countLimit = int.tryParse(params['COUNT'] ?? '');
+    DateTime? until;
+    if (params.containsKey('UNTIL')) {
+      until = _parseDateTimeString(params['UNTIL']!);
+    }
+
+    // BYDAY: strip any ordinal prefix (e.g. "1MO" → "MO", "-1FR" → "FR")
+    final byday = (params['BYDAY'] ?? '')
+        .split(',')
+        .map((s) => s.trim().toUpperCase().replaceAll(RegExp(r'^[-+]?\d+'), ''))
+        .where((s) => s.length == 2)
+        .toSet();
+
+    final maxOccurrences = countLimit ?? 1000;
+    final result = <DateTime>[];
+
+    if (freq == 'WEEKLY' && byday.isNotEmpty) {
+      // Weekly with explicit day list — may produce multiple occurrences per week
+      // Find Monday of the week that contains dtStart
+      final startWeekday = dtStart.weekday; // 1=Mon … 7=Sun
+      var weekMon = DateTime.utc(
+        dtStart.year, dtStart.month, dtStart.day,
+        dtStart.hour, dtStart.minute, dtStart.second,
+      ).subtract(Duration(days: startWeekday - 1));
+
+      while (result.length < maxOccurrences) {
+        if (weekMon.isAfter(windowEnd)) break;
+        if (until != null && weekMon.isAfter(until)) break;
+
+        for (var d = 0; d < 7; d++) {
+          final candidate = weekMon.add(Duration(days: d));
+          if (!byday.contains(_weekdayToStr(candidate.weekday))) continue;
+          if (candidate.isBefore(dtStart)) continue;
+          if (until != null && candidate.isAfter(until)) continue;
+          if (candidate.isAfter(windowEnd)) continue;
+          result.add(candidate);
+          if (result.length >= maxOccurrences) break;
+        }
+
+        weekMon = weekMon.add(Duration(days: 7 * interval));
+      }
+    } else {
+      // Simple DAILY / WEEKLY / MONTHLY / YEARLY
+      var current = dtStart;
+
+      while (result.length < maxOccurrences) {
+        if (current.isAfter(windowEnd)) break;
+        if (until != null && current.isAfter(until)) break;
+
+        result.add(current);
+
+        switch (freq) {
+          case 'DAILY':
+            current = current.add(Duration(days: interval));
+          case 'WEEKLY':
+            current = current.add(Duration(days: 7 * interval));
+          case 'MONTHLY':
+            var m = current.month + interval;
+            var y = current.year;
+            while (m > 12) { m -= 12; y++; }
+            // Clamp day to month boundary (e.g. Jan 31 + 1 month → Feb 28)
+            final maxDay = DateTime.utc(y, m + 1, 0).day;
+            current = DateTime.utc(y, m, current.day.clamp(1, maxDay),
+                current.hour, current.minute, current.second);
+          case 'YEARLY':
+            current = DateTime.utc(current.year + interval, current.month, current.day,
+                current.hour, current.minute, current.second);
+          default:
+            current = current.add(Duration(days: interval));
+        }
+      }
+    }
+
+    return result;
+  }
+
+  String _weekdayToStr(int weekday) {
+    const map = {1: 'MO', 2: 'TU', 3: 'WE', 4: 'TH', 5: 'FR', 6: 'SA', 7: 'SU'};
+    return map[weekday] ?? 'MO';
+  }
+
+  // ---------------------------------------------------------------------------
+  // EXDATE helpers
+  // ---------------------------------------------------------------------------
+
+  Set<int> _parseExdates(List<String> exdateLines) {
+    final result = <int>{};
+    for (final line in exdateLines) {
+      final colonIdx = line.indexOf(':');
+      if (colonIdx == -1) continue;
+      final key = line.substring(0, colonIdx);
+      final values = line.substring(colonIdx + 1);
+      final tzidMatch = RegExp(r'TZID=([^;:]+)').firstMatch(key);
+      final tzid = tzidMatch?.group(1);
+      for (final v in values.split(',')) {
+        final dt = _parseDateTimeString(v.trim(), tzid: tzid);
+        if (dt != null) result.add(dt.millisecondsSinceEpoch);
+      }
+    }
+    return result;
+  }
+
+  bool _isExcluded(DateTime occStart, Set<int> exdates) {
+    // Allow ±30s tolerance for floating-time edge cases
+    return exdates.any((ms) => (occStart.millisecondsSinceEpoch - ms).abs() < 30000);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Event builder
+  // ---------------------------------------------------------------------------
+
+  NormalizedEvent? _buildEvent(
+    Map<String, String> props,
+    List<String> attendeeLines,
+    String accountId, {
+    String? instanceId,
+    DateTime? instanceStart,
+    DateTime? instanceEnd,
+  }) {
     final uid = props['UID'];
+    if (uid == null && instanceId == null) return null;
+
+    final dtStart = instanceStart ?? _parseDateTimeFromProps(props, 'DTSTART');
+    if (dtStart == null) return null;
+
+    DateTime? dtEnd = instanceEnd ?? _parseDateTimeFromProps(props, 'DTEND');
+    if (dtEnd == null && props.containsKey('DURATION')) {
+      dtEnd = dtStart.add(_parseDuration(props['DURATION']!));
+    }
+    if (dtEnd == null) return null;
+
     final rawSummary = props['SUMMARY'] ?? '(No title)';
     final classValue = (props['CLASS'] ?? '').toUpperCase();
-    // An event is private if CLASS:PRIVATE/CONFIDENTIAL, or if the server
-    // has already masked the title to the standard "Private Appointment" string.
     final isPrivate = classValue == 'PRIVATE' ||
         classValue == 'CONFIDENTIAL' ||
         rawSummary.trim().toLowerCase() == 'private appointment' ||
         rawSummary.trim().toLowerCase() == 'private';
     final summary = isPrivate ? 'Private' : rawSummary;
-    final dtStart = _parseDateTime(props, 'DTSTART');
-    DateTime? dtEnd = _parseDateTime(props, 'DTEND');
-
-    // RFC 5545: DTEND may be absent when DURATION is present instead.
-    if (dtEnd == null && dtStart != null && props.containsKey('DURATION')) {
-      dtEnd = dtStart.add(_parseDuration(props['DURATION']!));
-    }
-
-    if (uid == null || dtStart == null || dtEnd == null) return null;
-
-    // Filter: events within a 60-day window (30 days past → 30 days future)
-    final now = DateTime.now().toUtc();
-    final windowStart = now.subtract(const Duration(days: 30));
-    final windowEnd = now.add(const Duration(days: 30));
-    if (dtEnd.isBefore(windowStart) || dtStart.isAfter(windowEnd)) return null;
 
     final location = props['LOCATION'];
     final description = props['DESCRIPTION'];
     final isOnline = location != null &&
-        (location.contains('http') || location.toLowerCase().contains('teams') ||
-         location.toLowerCase().contains('zoom') || location.toLowerCase().contains('meet'));
+        (location.contains('http') ||
+         location.toLowerCase().contains('teams') ||
+         location.toLowerCase().contains('zoom') ||
+         location.toLowerCase().contains('meet'));
 
     String? meetingUrl;
     if (isOnline && location != null) {
@@ -106,6 +339,7 @@ class IcsCalendarService {
     }
 
     final attendees = attendeeLines.map(_parseAttendee).whereType<Attendee>().toList();
+
     final organizer = props['ORGANIZER'];
     String? organizerEmail;
     if (organizer != null) {
@@ -114,7 +348,7 @@ class IcsCalendarService {
     }
 
     return NormalizedEvent(
-      id: uid,
+      id: instanceId ?? uid!,
       accountId: accountId,
       provider: CalendarProvider.ics,
       title: summary,
@@ -130,8 +364,11 @@ class IcsCalendarService {
     );
   }
 
-  DateTime? _parseDateTime(Map<String, String> props, String key) {
-    // Try to find the value with or without parameters
+  // ---------------------------------------------------------------------------
+  // DateTime parsing
+  // ---------------------------------------------------------------------------
+
+  DateTime? _parseDateTimeFromProps(Map<String, String> props, String key) {
     String? value;
     String? matchedKey;
     for (final entry in props.entries) {
@@ -142,50 +379,80 @@ class IcsCalendarService {
       }
     }
     if (value == null) return null;
-
-    // Remove any trailing whitespace
     value = value.trim();
 
-    // Format: 20231215T140000Z or 20231215T140000
     if (value.length >= 15) {
-      final year   = int.parse(value.substring(0, 4));
-      final month  = int.parse(value.substring(4, 6));
-      final day    = int.parse(value.substring(6, 8));
-      final hour   = int.parse(value.substring(9, 11));
-      final minute = int.parse(value.substring(11, 13));
-      final second = int.parse(value.substring(13, 15));
+      final year   = int.tryParse(value.substring(0, 4));
+      final month  = int.tryParse(value.substring(4, 6));
+      final day    = int.tryParse(value.substring(6, 8));
+      final hour   = int.tryParse(value.substring(9, 11));
+      final minute = int.tryParse(value.substring(11, 13));
+      final second = int.tryParse(value.substring(13, 15));
+      if (year == null || month == null || day == null ||
+          hour == null || minute == null || second == null) return null;
 
       if (value.endsWith('Z')) {
         return DateTime.utc(year, month, day, hour, minute, second);
       }
 
-      // Check for TZID parameter (e.g. DTSTART;TZID=America/New_York:20231215T140000)
       final tzidMatch = RegExp(r'TZID=([^;:]+)').firstMatch(matchedKey ?? '');
       if (tzidMatch != null) {
         final tzid = tzidMatch.group(1)!;
-        final utcTime = parseWithTzid(year, month, day, hour, minute, second, tzid);
-        if (utcTime != null) return utcTime;
-        // Unknown TZID: treat as system local time (not UTC)
+        final utc = parseWithTzid(year, month, day, hour, minute, second, tzid);
+        if (utc != null) return utc;
         debugPrint('[ICS] Unknown TZID "$tzid" — treating as system local time');
         return DateTime(year, month, day, hour, minute, second).toUtc();
       }
 
-      // Floating time (no Z, no TZID): per ICS spec this is "local clock time"
+      // Floating time — treat as local clock time
       return DateTime(year, month, day, hour, minute, second).toUtc();
     }
 
-    // Date only: 20231215
+    // Date-only (all-day): 20231215
     if (value.length >= 8) {
-      final year  = int.parse(value.substring(0, 4));
-      final month = int.parse(value.substring(4, 6));
-      final day   = int.parse(value.substring(6, 8));
+      final year  = int.tryParse(value.substring(0, 4));
+      final month = int.tryParse(value.substring(4, 6));
+      final day   = int.tryParse(value.substring(6, 8));
+      if (year == null || month == null || day == null) return null;
       return DateTime.utc(year, month, day);
     }
 
     return null;
   }
 
-  /// Parses an RFC 5545 DURATION value (e.g. PT1H30M, P1D, P1DT2H) into a [Duration].
+  DateTime? _parseDateTimeString(String value, {String? tzid}) {
+    value = value.trim();
+    if (value.length >= 15) {
+      final year   = int.tryParse(value.substring(0, 4));
+      final month  = int.tryParse(value.substring(4, 6));
+      final day    = int.tryParse(value.substring(6, 8));
+      final hour   = int.tryParse(value.substring(9, 11));
+      final minute = int.tryParse(value.substring(11, 13));
+      final second = int.tryParse(value.substring(13, 15));
+      if (year == null || month == null || day == null ||
+          hour == null || minute == null || second == null) return null;
+
+      if (value.endsWith('Z')) return DateTime.utc(year, month, day, hour, minute, second);
+      if (tzid != null) {
+        final utc = parseWithTzid(year, month, day, hour, minute, second, tzid);
+        if (utc != null) return utc;
+      }
+      return DateTime(year, month, day, hour, minute, second).toUtc();
+    }
+    if (value.length >= 8) {
+      final year  = int.tryParse(value.substring(0, 4));
+      final month = int.tryParse(value.substring(4, 6));
+      final day   = int.tryParse(value.substring(6, 8));
+      if (year == null || month == null || day == null) return null;
+      return DateTime.utc(year, month, day);
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // DURATION parsing (RFC 5545: PT1H30M, P1D, P1DT2H, etc.)
+  // ---------------------------------------------------------------------------
+
   Duration _parseDuration(String raw) {
     final s = raw.trim().toUpperCase();
     var weeks = 0, days = 0, hours = 0, minutes = 0, seconds = 0;
@@ -208,6 +475,10 @@ class IcsCalendarService {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Attendee parsing
+  // ---------------------------------------------------------------------------
+
   Attendee? _parseAttendee(String line) {
     final mailtoMatch = RegExp(r'mailto:([^\s;]+)', caseSensitive: false).firstMatch(line);
     if (mailtoMatch == null) return null;
@@ -220,12 +491,28 @@ class IcsCalendarService {
     final partstatMatch = RegExp(r'PARTSTAT=(\w+)', caseSensitive: false).firstMatch(line);
     if (partstatMatch != null) {
       switch (partstatMatch.group(1)!.toUpperCase()) {
-        case 'ACCEPTED': status = ResponseStatus.accepted;
+        case 'ACCEPTED':  status = ResponseStatus.accepted;
         case 'TENTATIVE': status = ResponseStatus.tentative;
-        case 'DECLINED': status = ResponseStatus.declined;
+        case 'DECLINED':  status = ResponseStatus.declined;
       }
     }
 
     return Attendee(email: email, name: name, status: status);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Internal data class for a parsed VEVENT before normalisation
+// ---------------------------------------------------------------------------
+
+class _RawEvent {
+  final Map<String, String> props;
+  final List<String> attendeeLines;
+  final List<String> exdateLines;
+
+  const _RawEvent({
+    required this.props,
+    required this.attendeeLines,
+    required this.exdateLines,
+  });
 }

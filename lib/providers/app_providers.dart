@@ -198,6 +198,8 @@ class EventTimeOverridesNotifier extends StateNotifier<Map<String, Map<String, S
     updated.remove(eventId);
     state = updated;
   }
+
+  void reload() => _load();
 }
 
 // Claude AI client — watches settingsProvider so model changes take effect
@@ -235,3 +237,17 @@ class DismissedMeetingsNotifier extends StateNotifier<Set<String>> {
 
   void reload() => _load();
 }
+
+// Sync watcher — listens for external file changes (e.g. iCloud/Dropbox sync)
+// and reloads all providers so the UI reflects the updated data automatically.
+final syncWatcherProvider = Provider<void>((ref) {
+  AppDatabase.getInstance().then((db) {
+    db.externalChanges.listen((_) {
+      ref.read(meetingHistoryProvider.notifier).reload();
+      ref.read(todosProvider.notifier).reload();
+      ref.read(accountsProvider.notifier).reload();
+      ref.read(dismissedMeetingsProvider.notifier).reload();
+      ref.read(eventTimeOverridesProvider.notifier).reload();
+    });
+  });
+});

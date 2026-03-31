@@ -8,7 +8,13 @@ import {
 } from '@azure/msal-node';
 import { shell } from 'electron';
 import { tokenStore } from './token-store';
-import { MicrosoftAccountRecord } from '../../../shared/types/account';
+
+interface MicrosoftAccountRecord {
+  id: string;
+  email: string;
+  displayName: string;
+  tenantId: string;
+}
 
 export const MS_SCOPES = [
   'Calendars.Read',
