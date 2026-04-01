@@ -178,30 +178,20 @@ class AppDatabase {
   }
 
   static Future<void> changeDataDirectory(String newDir) async {
-    // Write current data to new location
     final prefs = await SharedPreferences.getInstance();
     final inst = _instance;
     if (inst != null) {
       final newPath = '$newDir/$_kDataFileName';
-      // If the target already has data, merge: keep existing records and
-      // overlay with our local ones so nothing is lost.
       final targetFile = File(newPath);
       if (targetFile.existsSync()) {
-        try {
-          final existing = jsonDecode(targetFile.readAsStringSync()) as Map<String, dynamic>;
-          // Merge: prefer existing data for keys present in both, then add ours.
-          final merged = Map<String, dynamic>.from(existing);
-          for (final entry in inst._data.entries) {
-            if (!merged.containsKey(entry.key)) {
-              merged[entry.key] = entry.value;
-            }
-          }
-          inst._data = merged;
-        } catch (_) {
-          // If target is corrupt, overwrite with our data.
-        }
+        // Target already has a data file — adopt it as-is.
+        // No write needed; the new instance will load it on next init.
+        debugPrint('[DB] Adopting existing data file at $newPath');
+      } else {
+        // New location — copy current data there.
+        await File(newPath).writeAsString(jsonEncode(inst._data), flush: true);
+        debugPrint('[DB] Wrote data to new location $newPath');
       }
-      await File(newPath).writeAsString(jsonEncode(inst._data), flush: true);
     }
     // Always clear the old bookmark FIRST. If we don't, a failed bookmark
     // write leaves the stale bookmark in prefs and _resolveDataFilePath will
