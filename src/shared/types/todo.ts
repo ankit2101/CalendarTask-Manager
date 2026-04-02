@@ -11,6 +11,7 @@ export interface TodoTask {
   manualPriority?: number;
   /** Set when the task was auto-created from a meeting note. */
   source?: { meetingTitle: string; meetingDate: string };
+  dueDate?: string; // ISO date string (YYYY-MM-DD)
   createdAt: string; // ISO
   updatedAt: string; // ISO
   completedAt?: string; // ISO
