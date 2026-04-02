@@ -30,12 +30,14 @@ export default function Todos() {
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newPriority, setNewPriority] = useState(3);
+  const [newDueDate, setNewDueDate] = useState('');
 
   // Editing state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editPriority, setEditPriority] = useState<number | ''>('');
+  const [editDueDate, setEditDueDate] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,6 +56,7 @@ export default function Todos() {
       description: newDesc.trim() || undefined,
       status,
       priority: newPriority,
+      dueDate: newDueDate || undefined,
       createdAt: now(),
       updatedAt: now(),
     };
@@ -62,6 +65,7 @@ export default function Todos() {
     setNewTitle('');
     setNewDesc('');
     setNewPriority(3);
+    setNewDueDate('');
     setAddingIn(null);
   }
 
@@ -82,6 +86,7 @@ export default function Todos() {
     setEditTitle(task.title);
     setEditDesc(task.description ?? '');
     setEditPriority(task.manualPriority ?? task.priority);
+    setEditDueDate(task.dueDate ?? '');
   }
 
   async function saveEdit(id: string) {
@@ -89,6 +94,7 @@ export default function Todos() {
       title: editTitle.trim(),
       description: editDesc.trim() || undefined,
       manualPriority: editPriority === '' ? undefined : Number(editPriority),
+      dueDate: editDueDate || undefined,
     };
     await window.api.updateTodo(id, updates);
     setTasks(t => t.map(task => task.id === id ? { ...task, ...updates, updatedAt: now() } : task));
@@ -110,7 +116,14 @@ export default function Todos() {
         {BUCKETS.map(({ status, label, icon }) => {
           const bucketTasks = tasks
             .filter(t => t.status === status)
-            .sort((a, b) => effectivePriority(b) - effectivePriority(a));
+            .sort((a, b) => {
+              // Sort by due date ascending; tasks without due date go last
+              if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+              if (a.dueDate) return -1;
+              if (b.dueDate) return 1;
+              // Fall back to priority (descending) for tasks without due date
+              return effectivePriority(b) - effectivePriority(a);
+            });
 
           return (
             <div key={status} style={styles.column}>
@@ -161,6 +174,15 @@ export default function Todos() {
                               ))}
                             </select>
                           </div>
+                          <div style={styles.editRow}>
+                            <label style={styles.editLabel}>Due date</label>
+                            <input
+                              type="date"
+                              style={styles.dateInput}
+                              value={editDueDate}
+                              onChange={e => setEditDueDate(e.target.value)}
+                            />
+                          </div>
                           <div style={styles.editActions}>
                             <button style={styles.btnSave} onClick={() => saveEdit(task.id)}>Save</button>
                             <button style={styles.btnCancel} onClick={() => setEditingId(null)}>Cancel</button>
@@ -181,6 +203,17 @@ export default function Todos() {
                           {task.source && (
                             <div style={styles.sourceTag}>
                               📅 {task.source.meetingTitle} · {task.source.meetingDate}
+                            </div>
+                          )}
+
+                          {task.dueDate && (
+                            <div style={{
+                              ...styles.dueDateTag,
+                              color: task.dueDate < new Date().toISOString().slice(0, 10) && task.status !== 'completed'
+                                ? '#f38ba8'
+                                : '#a6adc8',
+                            }}>
+                              Due {task.dueDate}
                             </div>
                           )}
 
@@ -254,6 +287,15 @@ export default function Todos() {
                         ))}
                       </select>
                     </div>
+                    <div style={styles.addRow}>
+                      <label style={styles.editLabel}>Due date</label>
+                      <input
+                        type="date"
+                        style={styles.dateInput}
+                        value={newDueDate}
+                        onChange={e => setNewDueDate(e.target.value)}
+                      />
+                    </div>
                     <div style={styles.editActions}>
                       <button style={styles.btnSave} onClick={() => handleAdd(status)}>Add</button>
                       <button style={styles.btnCancel} onClick={() => setAddingIn(null)}>Cancel</button>
@@ -262,7 +304,7 @@ export default function Todos() {
                 ) : (
                   <button
                     style={styles.addBtn}
-                    onClick={() => { setAddingIn(status); setNewTitle(''); setNewDesc(''); setNewPriority(3); }}
+                    onClick={() => { setAddingIn(status); setNewTitle(''); setNewDesc(''); setNewPriority(3); setNewDueDate(''); }}
                   >
                     + Add task
                   </button>
@@ -350,6 +392,12 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '4px 6px', color: '#cdd6f4', fontSize: 12, outline: 'none', flex: 1,
   },
   editActions: { display: 'flex', gap: 6, justifyContent: 'flex-end' },
+  dueDateTag: { fontSize: 11, marginBottom: 4 },
+  dateInput: {
+    background: '#313244', border: '1px solid #45475a', borderRadius: 6,
+    padding: '4px 6px', color: '#cdd6f4', fontSize: 12, outline: 'none', flex: 1,
+    colorScheme: 'dark' as const,
+  },
   btnSave: {
     background: '#cba6f7', border: 'none', color: '#1e1e2e',
     padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontWeight: 700, fontSize: 12,
