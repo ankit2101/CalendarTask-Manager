@@ -7,8 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v1.0.5)'
+        description: 'Release tag to create (e.g. v1.0.5)'
         required: true
+        default: 'v1.0.5'
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -17,6 +21,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create and push tag (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.tag.outputs.tag }}
+          git push origin ${{ steps.tag.outputs.tag }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -28,6 +51,7 @@ jobs:
         run: npm ci
 
       - name: Build DMG
+
         run: npm run make -- --platform darwin
 
       - name: Find DMG
@@ -37,19 +61,36 @@ jobs:
           echo "dmg_path=$DMG" >> $GITHUB_OUTPUT
           echo "dmg_name=$(basename $DMG)" >> $GITHUB_OUTPUT
 
-      - name: Determine release tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Upload DMG to release
+      - name: Create release and upload DMG
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          body: |
+            ## What's new in ${{ steps.tag.outputs.tag }}
+
+            ### To-do list sorted by due date
+            Tasks in each column are now sorted by due date ascending — earliest due date appears first. Tasks without a due date fall to the bottom and retain priority-based ordering.
+
+            ### Due date field added to tasks
+            - New date picker in the add and edit forms
+            - Due date shown on each card — displayed in red when overdue
+            - Optional field; existing tasks without one are unaffected
+
+            ---
+
+            ## Installation
+
+            1. Download `${{ steps.find_dmg.outputs.dmg_name }}`
+            2. Open the DMG → drag **CalendarTask Manager** to **Applications**
+            3. First launch: right-click → **Open** → **Open**, or run once in Terminal:
+               ```
+               xattr -cr "/Applications/CalendarTask Manager.app"
+               ```
+
+            > **Requirements:** macOS 12 or later · Apple Silicon or Intel
           files: ${{ steps.find_dmg.outputs.dmg_path }}
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
