@@ -5,8 +5,16 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function formatTimeWithTZ(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+function formatTimeWithTZ(iso: string, customTZ?: string) {
+  const d = new Date(iso);
+  if (customTZ) {
+    try {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: customTZ, timeZoneName: 'short' });
+    } catch {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + customTZ;
+    }
+  }
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
 }
 
 function formatDate(d: Date) {
