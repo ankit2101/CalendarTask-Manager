@@ -7,6 +7,18 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatTimeWithTZ(iso: string, customTZ?: string) {
+  const d = new Date(iso);
+  if (customTZ) {
+    try {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: customTZ, timeZoneName: 'short' });
+    } catch {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + customTZ;
+    }
+  }
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+}
+
 export default function QuickNote() {
   const [event, setEvent] = useState<NormalizedEvent | null>(null);
   const [note, setNote] = useState('');
@@ -97,7 +109,7 @@ export default function QuickNote() {
           <div style={styles.meetingInfo}>
             <span style={styles.meetingTitle}>{event.title}</span>
             <span style={styles.meetingTime}>
-              {formatTime(event.start)} – {formatTime(event.end)}
+              {formatTime(event.start)} – {formatTimeWithTZ(event.end, event.timeZone)}
             </span>
           </div>
         )}

@@ -8,6 +8,7 @@ class NormalizedEvent {
   final String title;
   final String start; // ISO 8601
   final String end;
+  final String? timeZone;
   final String? location;
   final bool isOnlineMeeting;
   final String? onlineMeetingUrl;
@@ -24,6 +25,7 @@ class NormalizedEvent {
     required this.title,
     required this.start,
     required this.end,
+    this.timeZone,
     this.location,
     this.isOnlineMeeting = false,
     this.onlineMeetingUrl,
@@ -41,6 +43,7 @@ class NormalizedEvent {
     'title': title,
     'start': start,
     'end': end,
+    'timeZone': timeZone,
     'location': location,
     'isOnlineMeeting': isOnlineMeeting,
     'onlineMeetingUrl': onlineMeetingUrl,
@@ -58,6 +61,7 @@ class NormalizedEvent {
     title: json['title'] as String,
     start: json['start'] as String,
     end: json['end'] as String,
+    timeZone: json['timeZone'] as String?,
     location: json['location'] as String?,
     isOnlineMeeting: json['isOnlineMeeting'] as bool? ?? false,
     onlineMeetingUrl: json['onlineMeetingUrl'] as String?,

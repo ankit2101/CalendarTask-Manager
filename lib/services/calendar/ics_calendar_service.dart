@@ -347,6 +347,14 @@ class IcsCalendarService {
       organizerEmail = match?.group(1);
     }
 
+    String? originalTz;
+    for (final key in props.keys) {
+      if (key.startsWith('DTSTART;TZID=')) {
+        originalTz = RegExp(r'TZID=([^;:]+)').firstMatch(key)?.group(1);
+        break;
+      }
+    }
+
     return NormalizedEvent(
       id: instanceId ?? uid!,
       accountId: accountId,
@@ -354,6 +362,7 @@ class IcsCalendarService {
       title: summary,
       start: dtStart.toIso8601String(),
       end: dtEnd.toIso8601String(),
+      timeZone: originalTz,
       location: isPrivate ? null : location,
       isOnlineMeeting: isPrivate ? false : isOnline,
       onlineMeetingUrl: isPrivate ? null : meetingUrl,

@@ -7,6 +7,7 @@ export interface NormalizedEvent {
   title: string;
   start: string; // ISO string
   end: string;   // ISO string
+  timeZone?: string;
   attendees: string[];
   isOnlineMeeting: boolean;
   organizer: string;

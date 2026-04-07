@@ -315,7 +315,7 @@ class _EventCard extends ConsumerWidget {
             Row(
               children: [
                 Text(
-                  '${timeFormat.format(resolveStart())} \u2013 ${timeFormat.format(resolveEnd())}',
+                  '${timeFormat.format(resolveStart())} \u2013 ${timeFormat.format(resolveEnd())} ${event.timeZone ?? resolveStart().timeZoneName}',
                   style: const TextStyle(color: CatppuccinMocha.subtext0, fontSize: 13),
                 ),
                 if (ov != null) ...[
