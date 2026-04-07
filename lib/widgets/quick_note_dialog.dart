@@ -231,7 +231,7 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
                     const SizedBox(height: 4),
                     Text(
                       '${dateFormat.format(start)}  ·  '
-                      '${timeFormat.format(start)} \u2013 ${timeFormat.format(parseToLocal(event.end))}'
+                      '${timeFormat.format(start)} \u2013 ${timeFormat.format(parseToLocal(event.end))} ${start.timeZoneName}'
                       '${event.attendees.length > 1 ? '  ·  ${event.attendees.length} attendees' : ''}',
                       style: const TextStyle(color: CatppuccinMocha.subtext0, fontSize: 13),
                     ),

@@ -5,6 +5,10 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatTimeWithTZ(iso: string) {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+}
+
 function formatDate(d: Date) {
   return d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
@@ -225,7 +229,7 @@ export default function Dashboard() {
                 </span>
               </div>
               <div style={styles.eventMeta}>
-                <span>{formatTime(event.start)} – {formatTime(event.end)}</span>
+                <span>{formatTime(event.start)} – {formatTimeWithTZ(event.end)}</span>
                 {event.attendees.length > 1 && (
                   <span style={styles.attendeeCount}>
                     · {event.attendees.length} attendees

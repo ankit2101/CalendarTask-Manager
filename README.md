@@ -107,44 +107,15 @@ All calendars are connected via a private ICS URL — no OAuth or third-party si
 
 ---
 
-## Building from Source
+## Documentation & Development
 
-### Prerequisites
+This repository contains two parallel implementations: a native **Flutter macOS app** and an **Electron React app** (under development/port).
 
-```bash
-# Install Flutter
-brew install flutter
+Please see the `docs/` directory for detailed architecture and development instructions:
 
-# Install CocoaPods
-brew install cocoapods
-```
-
-### Run in development
-
-```bash
-git clone https://github.com/ankit2101/CalendarTask-Manager.git
-cd CalendarTask-Manager
-flutter pub get
-cd macos && pod install && cd ..
-flutter run -d macos
-```
-
-### Build a release DMG
-
-```bash
-flutter build macos --release
-brew install create-dmg
-create-dmg \
-  --volname "CalendarTaskManager" \
-  --window-pos 200 120 \
-  --window-size 660 400 \
-  --icon-size 128 \
-  --icon "calendar_task_manager.app" 180 170 \
-  --hide-extension "calendar_task_manager.app" \
-  --app-drop-link 480 170 \
-  "CalendarTaskManager.dmg" \
-  "build/macos/Build/Products/Release/calendar_task_manager.app"
-```
+- [Workspace Architecture](docs/ARCHITECTURE.md)
+- [Flutter App Setup & Build](docs/FLUTTER_APP_SETUP.md)
+- [Electron App Setup & Build](docs/ELECTRON_APP_SETUP.md)
 
 ---
 
