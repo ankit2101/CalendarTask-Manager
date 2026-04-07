@@ -25,6 +25,7 @@ Grab the latest `.dmg` from [Releases](https://github.com/ankit2101/CalendarTask
 - Private appointments shown with a 🔒 lock icon
 - **Auto-refresh** every 15 minutes — no manual action needed
 - **Dismiss** past meeting reminders with the × button
+- **Timezone Preservation** — Explicitly captures and displays the event's original source timezone (e.g. PST, EST) instead of homogenizing exclusively to your system's local offset.
 - **Edit meeting time** — tap the ✏️ pencil icon on any event to correct the start/end time if it was captured in the wrong timezone. An **edited** badge marks overridden events; the reset button restores the original time
 
 ### ✏️ Meeting Notes
