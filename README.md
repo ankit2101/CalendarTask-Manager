@@ -1,16 +1,27 @@
 # CalendarTask Manager
 
-A native macOS app (Flutter) that connects your calendars via ICS/Webcal feeds, captures meeting notes with AI-extracted action items, and keeps your to-do list in one place.
+A cross-platform desktop app that connects your calendars via ICS/Webcal feeds, captures meeting notes with AI-extracted action items, and keeps your to-do list in one place. Available as a native **Flutter app on macOS** and an **Electron app on Windows**.
 
 ---
 
 ## Download
 
-Grab the latest `.dmg` from [Releases](https://github.com/ankit2101/CalendarTask-Manager/releases).
+Grab the latest release from [Releases](https://github.com/ankit2101/CalendarTask-Manager/releases).
+
+### macOS
+
+Download the `.dmg` file.
 
 1. Open the DMG and drag **CalendarTask Manager** to your Applications folder
 2. First launch: **right-click → Open** to bypass Gatekeeper
 3. If macOS blocks it entirely, run: `xattr -cr /Applications/calendar_task_manager.app`
+
+### Windows
+
+Download the `CalendarTaskManager-Setup.exe` file.
+
+1. Run the installer — it will install the app and create a Start Menu shortcut
+2. Launch **CalendarTask Manager** from the Start Menu
 
 ---
 
@@ -57,7 +68,8 @@ Grab the latest `.dmg` from [Releases](https://github.com/ankit2101/CalendarTask
 
 ## Requirements
 
-- macOS 10.13+
+- **macOS** 10.13+ (Flutter app)
+- **Windows** 10+ (Electron app)
 - A [Claude API key](https://console.anthropic.com/)
 
 ---
@@ -110,7 +122,7 @@ All calendars are connected via a private ICS URL — no OAuth or third-party si
 
 ## Documentation & Development
 
-This repository contains two parallel implementations: a native **Flutter macOS app** and an **Electron React app** (under development/port).
+This repository contains two parallel implementations: a native **Flutter macOS app** and an **Electron React app** (Windows, with macOS support in progress).
 
 Please see the `docs/` directory for detailed architecture and development instructions:
 
