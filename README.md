@@ -1,6 +1,6 @@
 # CalendarTask Manager
 
-A cross-platform desktop app that connects your calendars via ICS/Webcal feeds, captures meeting notes with AI-extracted action items, and keeps your to-do list in one place. Available as a native **Flutter app on macOS** and an **Electron app on Windows**.
+A cross-platform desktop app built with Flutter that connects your calendars via ICS/Webcal feeds, captures meeting notes with AI-extracted action items, and keeps your to-do list in one place. Available on **macOS** and **Windows**.
 
 ---
 
@@ -18,10 +18,10 @@ Download the `.dmg` file.
 
 ### Windows
 
-Download the `CalendarTaskManager-Setup.exe` file.
+Download `CalendarTaskManager-windows.zip`.
 
-1. Run the installer — it will install the app and create a Start Menu shortcut
-2. Launch **CalendarTask Manager** from the Start Menu
+1. Extract the zip
+2. Run `calendar_task_manager.exe`
 
 ---
 
@@ -122,13 +122,9 @@ All calendars are connected via a private ICS URL — no OAuth or third-party si
 
 ## Documentation & Development
 
-This repository contains two parallel implementations: a native **Flutter macOS app** and an **Electron React app** (Windows, with macOS support in progress).
+Please see the `docs/` directory for development instructions:
 
-Please see the `docs/` directory for detailed architecture and development instructions:
-
-- [Workspace Architecture](docs/ARCHITECTURE.md)
 - [Flutter App Setup & Build](docs/FLUTTER_APP_SETUP.md)
-- [Electron App Setup & Build](docs/ELECTRON_APP_SETUP.md)
 
 ---
 
@@ -137,8 +133,9 @@ Please see the `docs/` directory for detailed architecture and development instr
 | Layer | Technology |
 |---|---|
 | Language | Dart / Flutter |
+| Platforms | macOS, Windows |
 | State management | Riverpod |
-| Persistence | JSON file (data) + macOS Keychain (secrets) |
+| Persistence | JSON file (data) + Keychain / SharedPreferences (secrets) |
 | AI | Anthropic Claude API |
 | ICS parsing | Custom RFC 5545 parser |
 | Timezones | IANA tz database (timezone package) |
