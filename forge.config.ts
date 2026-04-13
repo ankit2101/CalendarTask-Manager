@@ -29,7 +29,12 @@ const config: ForgeConfig = {
       name: 'CalendarTask Manager',
     }, ['darwin']),
     new MakerZIP({}, ['darwin']),
-    new MakerSquirrel({}),
+    new MakerSquirrel({
+      name: 'CalendarTaskManager',
+      setupExe: 'CalendarTaskManagerSetup.exe',
+      authors: 'ankiagar',
+      description: 'CalendarTask Manager – Calendar & Task Management App',
+    }, ['win32']),
     new MakerRpm({}),
     new MakerDeb({}),
   ],

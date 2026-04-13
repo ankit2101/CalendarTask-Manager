@@ -32,6 +32,16 @@ coverage
 # Compiled binary addons (https://nodejs.org/api/addons.html)
 build/Release
 
+# Flutter/Dart build output
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# macOS app bundles and disk images
+*.dmg
+*.app
+
 # Dependency directories
 node_modules/
 jspm_packages/
