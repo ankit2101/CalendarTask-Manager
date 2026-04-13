@@ -1,0 +1,135 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.2.2)'
+        required: true
+        default: 'v1.2.2'
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create and push tag (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.tag.outputs.tag }} || echo "Tag already exists, skipping"
+          git push origin ${{ steps.tag.outputs.tag }} || echo "Tag already pushed, skipping"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          body: |
+            ## CalendarTask Manager ${{ steps.tag.outputs.tag }}
+
+            ### Downloads
+
+            | Platform | File |
+            |---|---|
+            | macOS 10.13+ (Apple Silicon / Intel) | `CalendarTaskManager-*.dmg` |
+            | Windows 10+ (64-bit) | `CalendarTaskManagerSetup.exe` |
+
+            ---
+
+            ### macOS Installation
+            1. Download the `.dmg` file
+            2. Open the DMG → drag **CalendarTask Manager** to **Applications**
+            3. First launch: right-click → **Open**, or run: `xattr -cr "/Applications/CalendarTask Manager.app"`
+
+            ### Windows Installation
+            1. Download `CalendarTaskManagerSetup.exe`
+            2. Run the installer — it will install the app and create a Start Menu shortcut
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-macos:
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build DMG
+        run: npm run make -- --platform darwin
+
+      - name: Find DMG
+        id: find_dmg
+        run: |
+          DMG=$(find out/make -name "*.dmg" | head -1)
+          echo "dmg_path=$DMG" >> $GITHUB_OUTPUT
+
+      - name: Upload DMG to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag }}
+          files: ${{ steps.find_dmg.outputs.dmg_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows:
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows Installer
+        run: npm run make -- --platform win32 --arch x64
+
+      - name: Find installer
+        id: find_exe
+        shell: bash
+        run: |
+          EXE=$(find out/make -name "*.exe" | head -1)
+          echo "exe_path=$EXE" >> $GITHUB_OUTPUT
+
+      - name: Upload installer to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag }}
+          files: ${{ steps.find_exe.outputs.exe_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
