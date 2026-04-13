@@ -69,7 +69,7 @@ Download `CalendarTaskManager-windows.zip`.
 ## Requirements
 
 - **macOS** 10.13+ (Flutter app)
-- **Windows** 10+ (Electron app)
+- **Windows** 10+ (Flutter app)
 - A [Claude API key](https://console.anthropic.com/)
 
 ---
@@ -78,7 +78,9 @@ Download `CalendarTaskManager-windows.zip`.
 
 ### 1. Install the app
 
-Download `CalendarTaskManager.dmg` from [Releases](https://github.com/ankit2101/CalendarTask-Manager/releases) and drag to Applications.
+Download the latest release from [Releases](https://github.com/ankit2101/CalendarTask-Manager/releases):
+- **macOS**: open the `.dmg` and drag **CalendarTask Manager** to Applications
+- **Windows**: extract `CalendarTaskManager-windows.zip` and run `calendar_task_manager.exe`
 
 ### 2. Add your Claude API key
 
@@ -181,11 +183,16 @@ lib/
 
 ## Data Storage
 
-All data is stored locally in a single JSON file (`calendartask_data.json`). The default location is `~/Library/Application Support/com.caltask.calendar_task_manager/`, but you can move it anywhere — including a cloud folder like **OneDrive or iCloud Drive** — via **Settings → Change Data Location**.
+All data is stored locally in a single JSON file (`calendartask_data.json`). Default locations:
 
-When you choose a folder outside the app sandbox (e.g. `~/Library/CloudStorage/`), the app saves a macOS **security-scoped bookmark** so it can re-open the file automatically on every future launch without prompting.
+- **macOS**: `~/Library/Application Support/com.caltask.calendar_task_manager/`
+- **Windows**: `%APPDATA%\com.caltask.calendar_task_manager\`
 
-Sensitive credentials (Claude API key) are stored in the **macOS Keychain**, not in the data file.
+You can move the file anywhere — including a cloud folder like **OneDrive or iCloud Drive** — via **Settings → Change Data Location**.
+
+On macOS, when you choose a folder outside the app sandbox the app saves a **security-scoped bookmark** so it can re-open the file automatically on every future launch without prompting.
+
+Sensitive credentials (Claude API key) are stored in the system keychain (**Keychain** on macOS, **Credential Manager** on Windows), not in the data file.
 
 No data is sent to any server except the Claude API when extracting action items.
 
