@@ -355,13 +355,22 @@ class IcsCalendarService {
       }
     }
 
+    // Always serialise as an explicit UTC ISO string (with Z suffix) so that
+    // parseToLocal() can unambiguously convert to the system timezone.
+    // tz.TZDateTime.toUtc() may return a TZDateTime whose isUtc flag is false
+    // even when in UTC location — going via millisecondsSinceEpoch guarantees
+    // a standard Dart UTC DateTime whose toIso8601String() appends 'Z'.
+    String _toUtcIso(DateTime dt) =>
+        DateTime.fromMillisecondsSinceEpoch(dt.millisecondsSinceEpoch, isUtc: true)
+            .toIso8601String();
+
     return NormalizedEvent(
       id: instanceId ?? uid!,
       accountId: accountId,
       provider: CalendarProvider.ics,
       title: summary,
-      start: dtStart.toIso8601String(),
-      end: dtEnd.toIso8601String(),
+      start: _toUtcIso(dtStart),
+      end: _toUtcIso(dtEnd),
       timeZone: originalTz,
       location: isPrivate ? null : location,
       isOnlineMeeting: isPrivate ? false : isOnline,
