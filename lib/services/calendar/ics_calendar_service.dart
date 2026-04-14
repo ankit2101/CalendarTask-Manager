@@ -166,7 +166,7 @@ class IcsCalendarService {
       }
     }
 
-    events.sort((a, b) => a.start.compareTo(b.start));
+    events.sort((a, b) => parseToLocal(a.start).compareTo(parseToLocal(b.start)));
     return events;
   }
 

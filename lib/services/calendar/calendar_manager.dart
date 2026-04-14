@@ -1,6 +1,7 @@
 import 'dart:math' show min;
 import 'package:flutter/foundation.dart';
 import '../../models/calendar_event.dart';
+import '../../core/time_utils.dart';
 import '../storage/app_database.dart';
 import 'ics_calendar_service.dart';
 
@@ -33,7 +34,7 @@ class CalendarManager {
       }
     }
 
-    allEvents.sort((a, b) => a.start.compareTo(b.start));
+    allEvents.sort((a, b) => parseToLocal(a.start).compareTo(parseToLocal(b.start)));
 
     // Deduplicate: same title + same start minute = same meeting across feeds.
     final seen = <String>{};
