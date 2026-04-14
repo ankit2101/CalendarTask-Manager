@@ -138,7 +138,11 @@ DateTime parseToLocal(String isoString) {
 DateTime? parseWithTzid(
     int year, int month, int day, int hour, int minute, int second, String tzid) {
   try {
-    final location = tz.getLocation(tzid.trim().replaceAll('"', ''));
+    final cleanTzid = tzid.trim().replaceAll('"', '');
+    // Translate Windows timezone names (e.g. "Mountain Standard Time") to
+    // IANA IDs (e.g. "America/Denver") before looking up in the tz database.
+    final ianaId = windowsToIana[cleanTzid] ?? cleanTzid;
+    final location = tz.getLocation(ianaId);
     final local = tz.TZDateTime(location, year, month, day, hour, minute, second);
     return local.toUtc();
   } catch (e) {
