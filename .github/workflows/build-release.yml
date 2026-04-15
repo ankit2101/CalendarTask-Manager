@@ -49,6 +49,10 @@ jobs:
           body: |
             ## CalendarTask Manager ${{ steps.tag.outputs.tag }}
 
+            See [CHANGELOG.md](https://github.com/ankit2101/CalendarTask-Manager/blob/main/CHANGELOG.md) for full release notes.
+
+            ---
+
             ### Downloads
 
             | Platform | File |
@@ -60,29 +64,24 @@ jobs:
 
             ### macOS Installation
 
-            > **Note:** This app is not notarized with Apple. macOS may show _"app can't be opened"_ — follow the steps below to install it.
+            > The app is ad-hoc signed but **not notarized**. macOS may show _"app can't be opened"_ on first launch.
 
             **Option A — Install Helper (easiest)**
-            1. Download and open `CalendarTask.Manager.dmg`
-            2. Double-click **"Install CalendarTask Manager.command"** inside the DMG
-            3. Enter your password if prompted — the helper copies the app and clears the Gatekeeper flag automatically
+            1. Open `CalendarTask.Manager.dmg`
+            2. Double-click **"Install CalendarTask Manager.command"**
+            3. Enter your password if prompted — done ✓
 
-            **Option B — Manual**
-            1. Open the DMG → drag **CalendarTask Manager** into **Applications**
-            2. Open **Terminal** and run:
-               ```
-               xattr -cr "/Applications/CalendarTask Manager.app"
-               ```
-            3. Open the app normally
+            **Option B — Terminal**
+            1. Drag the app to **Applications**
+            2. Run: `xattr -cr "/Applications/CalendarTask Manager.app"`
 
             **Option C — System Settings**
-            1. Drag the app to Applications and try to open it
-            2. Go to **System Settings → Privacy & Security → scroll down → "Open Anyway"**
+            After trying to open: **System Settings → Privacy & Security → Open Anyway**
 
             ### Windows Installation
-            1. Download `CalendarTaskManager-windows.zip`
-            2. Extract and run `calendar_task_manager.exe`
-            3. If Windows Defender blocks it: click **More info → Run anyway**
+            1. Extract `CalendarTaskManager-windows.zip`
+            2. Run `calendar_task_manager.exe`
+            3. Windows Defender prompt → **More info → Run anyway**
           draft: false
           prerelease: false
         env:
