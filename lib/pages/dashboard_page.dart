@@ -5,6 +5,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../core/theme/catppuccin_mocha.dart';
 import '../core/constants.dart';
 import '../core/time_utils.dart';
+import '../models/account.dart';
 import '../models/calendar_event.dart';
 import '../providers/app_providers.dart';
 import '../widgets/quick_note_dialog.dart';
@@ -270,9 +271,19 @@ class _EventCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final accounts = ref.watch(accountsProvider);
+    final account = accounts.firstWhere(
+      (a) => a.id == event.accountId,
+      orElse: () => CalendarAccount(
+        id: event.accountId,
+        email: '',
+        displayName: event.provider.name.toUpperCase(),
+        provider: event.provider.name,
+      ),
+    );
     final calColor = event.isPrivate
         ? CatppuccinMocha.overlay0
-        : accountColor(event.accountId);
+        : accountColor(event.accountId, customHex: account.color);
     final borderColor = event.isPrivate
         ? CatppuccinMocha.overlay0.withValues(alpha: 0.4)
         : isMissing ? CatppuccinMocha.yellow : calColor;
@@ -344,16 +355,38 @@ class _EventCard extends ConsumerWidget {
                   )
                 else
                   Container(
+                    constraints: const BoxConstraints(maxWidth: 120),
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                     decoration: BoxDecoration(
                       color: calColor.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(color: calColor.withValues(alpha: 0.3)),
                     ),
-                    child: Text(
-                      event.provider == CalendarProvider.microsoft ? 'MS' :
-                      event.provider == CalendarProvider.google ? 'G' : 'ICS',
-                      style: TextStyle(color: calColor, fontSize: 11, fontWeight: FontWeight.w600),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          margin: const EdgeInsets.only(right: 4),
+                          decoration: BoxDecoration(
+                            color: calColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        Flexible(
+                          child: Text(
+                            account.displayName,
+                            style: TextStyle(
+                              color: calColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
               ],
