@@ -3,8 +3,15 @@ import 'package:flutter/foundation.dart';
 import '../../models/calendar_event.dart';
 import '../../core/time_utils.dart';
 
+/// Maximum ICS response size accepted (10 MB). Feeds larger than this are
+/// rejected to prevent memory exhaustion from malicious or misconfigured servers.
+const _kMaxIcsBytes = 10 * 1024 * 1024;
+
 class IcsCalendarService {
-  final Dio _dio = Dio();
+  final Dio _dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 30),
+  ));
 
   Future<List<NormalizedEvent>> fetchEvents(String accountId, String url) async {
     // webcal:// is just http/https — normalize it
@@ -16,7 +23,16 @@ class IcsCalendarService {
         'Pragma': 'no-cache',
       }),
     );
-    return parseIcs(response.data as String, accountId);
+
+    // Reject oversized feeds before parsing to avoid memory exhaustion.
+    final raw = response.data as String;
+    if (raw.length > _kMaxIcsBytes) {
+      throw Exception(
+        'ICS feed is too large (${(raw.length / 1024 / 1024).toStringAsFixed(1)} MB). '
+        'Maximum allowed is ${_kMaxIcsBytes ~/ 1024 ~/ 1024} MB.',
+      );
+    }
+    return parseIcs(raw, accountId);
   }
 
   List<NormalizedEvent> parseIcs(String icsData, String accountId) {
@@ -198,7 +214,10 @@ class IcsCalendarService {
         .where((s) => s.length == 2)
         .toSet();
 
-    final maxOccurrences = countLimit ?? 1000;
+    // Hard cap: a crafted ICS with COUNT=999999999 would OOM the process.
+    // 5 000 occurrences covers ~14 years of weekly meetings — more than enough.
+    const _kMaxExpansion = 5000;
+    final maxOccurrences = (countLimit ?? _kMaxExpansion).clamp(1, _kMaxExpansion);
     final result = <DateTime>[];
 
     if (freq == 'WEEKLY' && byday.isNotEmpty) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../core/theme/catppuccin_mocha.dart';
 import '../core/time_utils.dart';
@@ -58,7 +59,75 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
     super.dispose();
   }
 
+  /// Shows a one-time data-privacy notice before the first Claude API call.
+  /// Returns true if the user consented (or had already consented previously).
+  Future<bool> _ensureAiConsent() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('claude_ai_consent_given') == true) return true;
+
+    final consented = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: CatppuccinMocha.base,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Row(
+          children: [
+            Icon(Icons.privacy_tip_outlined, color: CatppuccinMocha.yellow, size: 20),
+            SizedBox(width: 8),
+            Text(
+              'Data Privacy Notice',
+              style: TextStyle(color: CatppuccinMocha.text, fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'To extract action items, the following data will be sent to the Anthropic Claude API:',
+              style: TextStyle(color: CatppuccinMocha.subtext0, fontSize: 13),
+            ),
+            SizedBox(height: 12),
+            _BulletRow('Meeting title and date'),
+            _BulletRow('Attendee display names (emails are never sent)'),
+            _BulletRow('Your meeting notes'),
+            SizedBox(height: 12),
+            Text(
+              'This data is processed by Anthropic under their Privacy Policy and is not used to train AI models by default. This notice is shown once.',
+              style: TextStyle(color: CatppuccinMocha.overlay0, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            style: TextButton.styleFrom(foregroundColor: CatppuccinMocha.overlay0),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: CatppuccinMocha.mauve,
+              foregroundColor: CatppuccinMocha.base,
+            ),
+            child: const Text('I Understand — Continue'),
+          ),
+        ],
+      ),
+    );
+
+    if (consented == true) {
+      await prefs.setBool('claude_ai_consent_given', true);
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _extractActions() async {
+    if (!await _ensureAiConsent()) return;
+
     setState(() {
       _isExtracting = true;
       _extractError = null;
@@ -433,6 +502,26 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Simple bullet-point row used in the AI consent dialog.
+class _BulletRow extends StatelessWidget {
+  final String text;
+  const _BulletRow(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('• ', style: TextStyle(color: CatppuccinMocha.mauve, fontSize: 13)),
+          Expanded(child: Text(text, style: const TextStyle(color: CatppuccinMocha.subtext0, fontSize: 13))),
+        ],
       ),
     );
   }
