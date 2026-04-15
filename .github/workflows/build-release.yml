@@ -53,19 +53,36 @@ jobs:
 
             | Platform | File |
             |---|---|
-            | macOS 10.13+ (Apple Silicon / Intel) | `CalendarTask.Manager.dmg` |
+            | macOS (Apple Silicon / Intel) | `CalendarTask.Manager.dmg` |
             | Windows 10+ (64-bit) | `CalendarTaskManager-windows.zip` |
 
             ---
 
             ### macOS Installation
-            1. Download `CalendarTask.Manager.dmg`
-            2. Open the DMG → drag **CalendarTask Manager** to **Applications**
-            3. First launch: right-click → **Open**, or run: `xattr -cr "/Applications/CalendarTask Manager.app"`
+
+            > **Note:** This app is not notarized with Apple. macOS may show _"app can't be opened"_ — follow the steps below to install it.
+
+            **Option A — Install Helper (easiest)**
+            1. Download and open `CalendarTask.Manager.dmg`
+            2. Double-click **"Install CalendarTask Manager.command"** inside the DMG
+            3. Enter your password if prompted — the helper copies the app and clears the Gatekeeper flag automatically
+
+            **Option B — Manual**
+            1. Open the DMG → drag **CalendarTask Manager** into **Applications**
+            2. Open **Terminal** and run:
+               ```
+               xattr -cr "/Applications/CalendarTask Manager.app"
+               ```
+            3. Open the app normally
+
+            **Option C — System Settings**
+            1. Drag the app to Applications and try to open it
+            2. Go to **System Settings → Privacy & Security → scroll down → "Open Anyway"**
 
             ### Windows Installation
             1. Download `CalendarTaskManager-windows.zip`
             2. Extract and run `calendar_task_manager.exe`
+            3. If Windows Defender blocks it: click **More info → Run anyway**
           draft: false
           prerelease: false
         env:
@@ -94,16 +111,67 @@ jobs:
       - name: Install create-dmg
         run: brew install create-dmg
 
+      - name: Remove quarantine & ad-hoc sign
+        run: |
+          APP="build/macos/Build/Products/Release/calendar_task_manager.app"
+          # Strip any quarantine attributes baked in during the build
+          xattr -cr "$APP"
+          # Ad-hoc sign every binary/framework inside the bundle so macOS
+          # accepts the app without an Apple Developer certificate.
+          # Sign nested frameworks and dylibs first, then the main bundle.
+          find "$APP/Contents/Frameworks" -name "*.dylib" -o -name "*.framework" 2>/dev/null | \
+            sort -r | xargs -I{} codesign --force --deep --sign - {} 2>/dev/null || true
+          codesign --force --deep --sign - "$APP"
+
+      - name: Create install helper script
+        run: |
+          cat > "Install CalendarTask Manager.command" << 'SCRIPT'
+          #!/bin/bash
+          # ── CalendarTask Manager – macOS Install Helper ──────────────────────
+          # Copies the app to /Applications and removes the quarantine flag that
+          # macOS adds to files downloaded from the internet.  Double-click this
+          # file from the DMG to run it.
+          # ─────────────────────────────────────────────────────────────────────
+          set -e
+          APP_NAME="CalendarTask Manager.app"
+          DMG_DIR="$(cd "$(dirname "$0")" && pwd)"
+          SRC="$DMG_DIR/$APP_NAME"
+          DEST="/Applications/$APP_NAME"
+
+          if [ ! -d "$SRC" ]; then
+            osascript -e 'display alert "Install Helper" message "Could not find CalendarTask Manager.app next to this script."'
+            exit 1
+          fi
+
+          echo "Copying to /Applications…"
+          cp -R "$SRC" "$DEST" 2>/dev/null || { sudo cp -R "$SRC" "$DEST"; }
+
+          echo "Clearing Gatekeeper quarantine…"
+          xattr -cr "$DEST"
+
+          osascript -e 'display notification "CalendarTask Manager installed successfully." with title "Install Complete"'
+          open "$DEST"
+          SCRIPT
+          chmod +x "Install CalendarTask Manager.command"
+
       - name: Create DMG
         run: |
+          # Stage folder for DMG contents
+          mkdir -p dmg_contents
+          cp -R "build/macos/Build/Products/Release/calendar_task_manager.app" \
+            "dmg_contents/CalendarTask Manager.app"
+          cp "Install CalendarTask Manager.command" "dmg_contents/"
+
           create-dmg \
             --volname "CalendarTask Manager" \
             --window-pos 200 120 \
-            --window-size 800 400 \
+            --window-size 860 400 \
             --icon-size 100 \
+            --icon "CalendarTask Manager.app" 200 185 \
             --app-drop-link 600 185 \
+            --icon "Install CalendarTask Manager.command" 400 310 \
             "CalendarTask.Manager.dmg" \
-            "build/macos/Build/Products/Release/calendar_task_manager.app"
+            "dmg_contents/"
 
       - name: Upload DMG to release
         uses: softprops/action-gh-release@v2
