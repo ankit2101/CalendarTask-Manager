@@ -94,6 +94,12 @@ class AccountsNotifier extends StateNotifier<List<CalendarAccount>> {
     state = db.getAccounts();
   }
 
+  Future<void> updateAccount(CalendarAccount account) async {
+    final db = await AppDatabase.getInstance();
+    await db.saveAccount(account);
+    state = db.getAccounts();
+  }
+
   void reload() => _load();
 }
 

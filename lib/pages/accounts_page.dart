@@ -27,25 +27,22 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
   /// address that must not be reachable from a user-supplied ICS URL (SSRF guard).
   bool _isPrivateHost(String host) {
     final h = host.toLowerCase();
-    // Named loopback / special hostnames
     if (h == 'localhost' || h == 'broadcasthost') return true;
-    // IPv6 loopback
     if (h == '::1' || h == '::' || h.startsWith('[::')) return true;
 
-    // Try dotted-decimal IPv4
     final parts = h.split('.');
     if (parts.length == 4) {
       final octets = parts.map(int.tryParse).toList();
       if (octets.every((o) => o != null && o >= 0 && o <= 255)) {
         final a = octets[0]!, b = octets[1]!;
-        if (a == 0) return true;                        // 0.x.x.x
-        if (a == 10) return true;                       // 10/8
-        if (a == 127) return true;                      // 127/8 loopback
-        if (a == 169 && b == 254) return true;          // 169.254/16 link-local / APIPA / cloud metadata
-        if (a == 172 && b >= 16 && b <= 31) return true; // 172.16-31/12
-        if (a == 192 && b == 168) return true;          // 192.168/16
-        if (a == 198 && (b == 18 || b == 19)) return true; // 198.18-19/15 benchmarking
-        if (a == 255) return true;                      // broadcast
+        if (a == 0) return true;
+        if (a == 10) return true;
+        if (a == 127) return true;
+        if (a == 169 && b == 254) return true;
+        if (a == 172 && b >= 16 && b <= 31) return true;
+        if (a == 192 && b == 168) return true;
+        if (a == 198 && (b == 18 || b == 19)) return true;
+        if (a == 255) return true;
       }
     }
     return false;
@@ -65,7 +62,6 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
       return;
     }
 
-    // Block private/loopback hosts to prevent SSRF
     if (_isPrivateHost(uri.host)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -114,7 +110,6 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
                   color: CatppuccinMocha.text)),
           const SizedBox(height: 20),
 
-          // ICS / Webcal section
           _SectionHeader(
               title: 'ICS / Webcal',
               icon: Icons.link,
@@ -124,6 +119,8 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
           else
             ...ics.map((a) => _AccountTile(account: a)),
           const SizedBox(height: 12),
+
+          // Add new feed form
           TextField(
             controller: _icsNameController,
             decoration: const InputDecoration(
@@ -149,6 +146,179 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Account tile with inline colour picker
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AccountTile extends ConsumerStatefulWidget {
+  final CalendarAccount account;
+  const _AccountTile({required this.account});
+
+  @override
+  ConsumerState<_AccountTile> createState() => _AccountTileState();
+}
+
+class _AccountTileState extends ConsumerState<_AccountTile> {
+  bool _pickerOpen = false;
+
+  Color get _currentColor =>
+      accountColor(widget.account.id, customHex: widget.account.color);
+
+  void _pickColor(Color color) {
+    final hex = colorToHex(color);
+    ref.read(accountsProvider.notifier).updateAccount(
+          widget.account.copyWith(color: hex),
+        );
+    setState(() => _pickerOpen = false);
+    // Refresh calendar events so card borders update immediately.
+    ref.read(eventsProvider.notifier).refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _currentColor;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(
+        color: CatppuccinMocha.surface0,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Main row
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                // Colour swatch button
+                Tooltip(
+                  message: 'Change calendar colour',
+                  child: GestureDetector(
+                    onTap: () => setState(() => _pickerOpen = !_pickerOpen),
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _pickerOpen
+                              ? CatppuccinMocha.text
+                              : color.withValues(alpha: 0.5),
+                          width: _pickerOpen ? 2 : 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+
+                // Name + URL
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(widget.account.displayName,
+                          style: const TextStyle(
+                              color: CatppuccinMocha.text,
+                              fontWeight: FontWeight.w600)),
+                      Text(widget.account.email,
+                          style: const TextStyle(
+                              color: CatppuccinMocha.overlay0, fontSize: 12),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+
+                // Delete button
+                IconButton(
+                  icon: const Icon(Icons.delete_outline,
+                      size: 18, color: CatppuccinMocha.red),
+                  onPressed: () {
+                    ref
+                        .read(accountsProvider.notifier)
+                        .removeAccount(widget.account.id);
+                    ref.read(eventsProvider.notifier).refresh();
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          // Inline colour picker (shown when swatch tapped)
+          if (_pickerOpen)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(color: CatppuccinMocha.surface1, height: 1),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Calendar colour',
+                    style: TextStyle(
+                        color: CatppuccinMocha.overlay0,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: calendarColorPalette.map((entry) {
+                      final (label, paletteColor) = entry;
+                      final isSelected = colorToHex(paletteColor) ==
+                          (widget.account.color ??
+                              colorToHex(accountColor(widget.account.id)));
+                      return Tooltip(
+                        message: label,
+                        child: GestureDetector(
+                          onTap: () => _pickColor(paletteColor),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            width: 26,
+                            height: 26,
+                            decoration: BoxDecoration(
+                              color: paletteColor,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isSelected
+                                    ? CatppuccinMocha.text
+                                    : Colors.transparent,
+                                width: 2.5,
+                              ),
+                              boxShadow: isSelected
+                                  ? [
+                                      BoxShadow(
+                                        color: paletteColor.withValues(alpha: 0.5),
+                                        blurRadius: 6,
+                                        spreadRadius: 1,
+                                      )
+                                    ]
+                                  : null,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared helpers
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _SectionHeader extends StatelessWidget {
   final String title;
@@ -187,49 +357,6 @@ class _EmptyHint extends StatelessWidget {
       child: Text(text,
           style: const TextStyle(
               color: CatppuccinMocha.overlay0, fontSize: 13)),
-    );
-  }
-}
-
-class _AccountTile extends ConsumerWidget {
-  final CalendarAccount account;
-  const _AccountTile({required this.account});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: CatppuccinMocha.surface0,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(account.displayName,
-                    style: const TextStyle(
-                        color: CatppuccinMocha.text,
-                        fontWeight: FontWeight.w600)),
-                Text(account.email,
-                    style: const TextStyle(
-                        color: CatppuccinMocha.overlay0, fontSize: 12)),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline,
-                size: 18, color: CatppuccinMocha.red),
-            onPressed: () {
-              ref.read(accountsProvider.notifier).removeAccount(account.id);
-              ref.read(eventsProvider.notifier).refresh();
-            },
-          ),
-        ],
-      ),
     );
   }
 }
