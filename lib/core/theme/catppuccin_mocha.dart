@@ -76,10 +76,16 @@ Color? colorFromHex(String? hex) {
 }
 
 /// Convert a [Color] to a '#RRGGBB' hex string.
+///
+/// Multiplies by 255 because [Color.r/g/b] return normalised doubles
+/// (0.0–1.0) in Flutter 3.27+, not the legacy 0–255 integers.
 String colorToHex(Color color) {
-  return '#${color.r.round().toRadixString(16).padLeft(2, '0')}'
-      '${color.g.round().toRadixString(16).padLeft(2, '0')}'
-      '${color.b.round().toRadixString(16).padLeft(2, '0')}';
+  final r = (color.r * 255).round();
+  final g = (color.g * 255).round();
+  final b = (color.b * 255).round();
+  return '#${r.toRadixString(16).padLeft(2, '0')}'
+      '${g.toRadixString(16).padLeft(2, '0')}'
+      '${b.toRadixString(16).padLeft(2, '0')}';
 }
 
 /// Returns the display colour for an account.
