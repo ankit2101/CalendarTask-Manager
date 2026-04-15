@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:timezone/timezone.dart' as tz;
 import '../core/theme/catppuccin_mocha.dart';
 import '../core/constants.dart';
 import '../core/time_utils.dart';
@@ -211,6 +212,52 @@ class _EventCard extends ConsumerWidget {
     required this.isDismissed,
   });
 
+  Widget _buildTimeDisplay(
+    DateFormat timeFormat,
+    DateTime Function() resolveStart,
+    DateTime Function() resolveEnd,
+    Map<String, String>? ov,
+  ) {
+    final sysStart = resolveStart();
+    final sysEnd = resolveEnd();
+    final sysAbbr = sysStart.timeZoneName;
+    final sysLine = '${timeFormat.format(sysStart)} \u2013 ${timeFormat.format(sysEnd)} $sysAbbr';
+
+    // Show source tz line only when there is no user override and the event has a source tz
+    String? srcLine;
+    if (ov == null && event.timeZone != null) {
+      try {
+        final ianaId = windowsToIana[event.timeZone!.trim()] ?? event.timeZone!.trim();
+        final location = tz.getLocation(ianaId);
+        final utcStart = DateTime.parse(event.start);
+        final utcEnd = DateTime.parse(event.end);
+        final srcStart = tz.TZDateTime.from(utcStart, location);
+        final srcEnd = tz.TZDateTime.from(utcEnd, location);
+        final srcAbbr = srcStart.timeZoneName;
+        if (srcAbbr != sysAbbr) {
+          srcLine = '${timeFormat.format(srcStart)} \u2013 ${timeFormat.format(srcEnd)} $srcAbbr';
+        }
+      } catch (_) {
+        // unrecognized tz — skip source line
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (srcLine != null)
+          Text(
+            srcLine,
+            style: const TextStyle(color: CatppuccinMocha.overlay0, fontSize: 11),
+          ),
+        Text(
+          sysLine,
+          style: const TextStyle(color: CatppuccinMocha.subtext0, fontSize: 13),
+        ),
+      ],
+    );
+  }
+
   static const _statusColors = {
     'past': CatppuccinMocha.overlay0,
     'active': CatppuccinMocha.green,
@@ -314,10 +361,7 @@ class _EventCard extends ConsumerWidget {
             // Time row
             Row(
               children: [
-                Text(
-                  '${timeFormat.format(resolveStart())} \u2013 ${timeFormat.format(resolveEnd())} ${resolveStart().timeZoneName}',
-                  style: const TextStyle(color: CatppuccinMocha.subtext0, fontSize: 13),
-                ),
+                _buildTimeDisplay(timeFormat, resolveStart, resolveEnd, ov),
                 if (ov != null) ...[
                   const SizedBox(width: 6),
                   Container(
