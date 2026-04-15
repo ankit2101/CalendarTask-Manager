@@ -389,12 +389,21 @@ class IcsCalendarService {
   DateTime? _parseDateTimeFromProps(Map<String, String> props, String key) {
     String? value;
     String? matchedKey;
+    // The props map contains BOTH the plain base key (e.g. "DTSTART") AND the
+    // parametrized key (e.g. "DTSTART;TZID=America/Denver"), inserted in that
+    // order. A plain startsWith(key) always hits the base key first, losing
+    // the TZID. We must prefer the parametrized key so timezone is honoured.
     for (final entry in props.entries) {
-      if (entry.key.startsWith(key)) {
+      if (entry.key.startsWith('$key;')) {   // parametrized first (DTSTART;TZID=…)
         value = entry.value;
         matchedKey = entry.key;
         break;
       }
+    }
+    if (value == null) {
+      // Fall back to plain base key (DTSTART with Z suffix, or all-day DATE)
+      value = props[key];
+      matchedKey = key;
     }
     if (value == null) return null;
     value = value.trim();
