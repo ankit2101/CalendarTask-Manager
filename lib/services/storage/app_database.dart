@@ -17,9 +17,24 @@ const _kBookmarkKey  = 'dataDirectoryBookmark';
 const _kDataFileName = 'calendartask_data.json';
 
 /// Secure-storage key under which the AES-256 database encryption key is kept.
-/// The key itself lives in the macOS Keychain / Windows Credential Manager.
+/// The key itself lives in the macOS Keychain / Windows Credential Manager,
+/// with SharedPreferences as a fallback when the entitlement is unavailable.
 const _kEncKeyName = 'db-enc-key';
 const _secureStorage = FlutterSecureStorage();
+
+/// Cached result of Keychain availability check so we only probe once.
+bool? _keychainAvailableGlobal;
+
+Future<bool> _isKeychainAvailable() async {
+  if (_keychainAvailableGlobal != null) return _keychainAvailableGlobal!;
+  try {
+    await _secureStorage.read(key: '__probe__');
+    _keychainAvailableGlobal = true;
+  } catch (_) {
+    _keychainAvailableGlobal = false;
+  }
+  return _keychainAvailableGlobal!;
+}
 
 class AppDatabase {
   static AppDatabase? _instance;
@@ -96,11 +111,30 @@ class AppDatabase {
   static const _kGcmPrefix = 'v2:';
 
   /// Retrieves the AES-256 key from secure storage, creating it on first use.
+  ///
+  /// Falls back to SharedPreferences when Keychain is unavailable (e.g. ad-hoc
+  /// signed macOS builds that lack the keychain-access-groups entitlement).
   static Future<enc.Key> _getEncKey() async {
-    final stored = await _secureStorage.read(key: _kEncKeyName);
+    if (await _isKeychainAvailable()) {
+      try {
+        final stored = await _secureStorage.read(key: _kEncKeyName);
+        if (stored != null) return enc.Key.fromBase64(stored);
+        final key = enc.Key.fromSecureRandom(32);
+        await _secureStorage.write(key: _kEncKeyName, value: key.base64);
+        return key;
+      } catch (_) {
+        // Unexpected error — fall through to SharedPreferences fallback.
+      }
+    }
+
+    // SharedPreferences fallback: less secure (stored in plist) but prevents
+    // app crash when the Keychain entitlement is absent.
+    final prefs = await SharedPreferences.getInstance();
+    const fallbackKey = 'enc_key_fallback';
+    final stored = prefs.getString(fallbackKey);
     if (stored != null) return enc.Key.fromBase64(stored);
     final key = enc.Key.fromSecureRandom(32);
-    await _secureStorage.write(key: _kEncKeyName, value: key.base64);
+    await prefs.setString(fallbackKey, key.base64);
     return key;
   }
 
