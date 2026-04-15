@@ -227,7 +227,9 @@ class _EventCard extends ConsumerWidget {
     String? srcLine;
     if (ov == null && event.timeZone != null) {
       try {
-        final ianaId = windowsToIana[event.timeZone!.trim()] ?? event.timeZone!.trim();
+        // Strip surrounding quotes that some ICS producers add (e.g. Outlook)
+        final cleanTz = event.timeZone!.trim().replaceAll('"', '');
+        final ianaId = windowsToIana[cleanTz] ?? cleanTz;
         final location = tz.getLocation(ianaId);
         final utcStart = DateTime.parse(event.start);
         final utcEnd = DateTime.parse(event.end);
