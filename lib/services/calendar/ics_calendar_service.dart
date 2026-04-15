@@ -200,7 +200,10 @@ class IcsCalendarService {
     }
 
     final freq = params['FREQ']?.toUpperCase() ?? 'WEEKLY';
-    final interval = int.tryParse(params['INTERVAL'] ?? '1') ?? 1;
+    // RFC 5545 §3.3.9: INTERVAL must be a positive integer (≥ 1).
+    // INTERVAL=0 causes Duration(days: 0) which freezes the expansion loop.
+    // Cap at 366 (one year in days) to reject absurd values.
+    final interval = (int.tryParse(params['INTERVAL'] ?? '1') ?? 1).clamp(1, 366);
     final countLimit = int.tryParse(params['COUNT'] ?? '');
     DateTime? until;
     if (params.containsKey('UNTIL')) {
@@ -290,7 +293,12 @@ class IcsCalendarService {
   // ---------------------------------------------------------------------------
 
   Set<int> _parseExdates(List<String> exdateLines) {
+    // Hard cap: a crafted feed with 100 000+ EXDATEs causes O(n×m) work in
+    // _isExcluded() for every expanded occurrence. 2 000 covers any real
+    // calendar (RFC 5545 events rarely exceed a few dozen exclusions).
+    const _kMaxExdates = 2000;
     final result = <int>{};
+    outer:
     for (final line in exdateLines) {
       final colonIdx = line.indexOf(':');
       if (colonIdx == -1) continue;
@@ -301,6 +309,7 @@ class IcsCalendarService {
       for (final v in values.split(',')) {
         final dt = _parseDateTimeString(v.trim(), tzid: tzid);
         if (dt != null) result.add(dt.millisecondsSinceEpoch);
+        if (result.length >= _kMaxExdates) break outer;
       }
     }
     return result;

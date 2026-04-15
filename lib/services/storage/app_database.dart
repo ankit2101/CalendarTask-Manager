@@ -84,8 +84,16 @@ class AppDatabase {
   }
 
   // ---------------------------------------------------------------------------
-  // Encryption helpers (AES-256-CBC, key stored in OS secure storage)
+  // Encryption helpers (AES-256-GCM, key stored in OS secure storage)
+  //
+  // Format versions:
+  //   v1 (legacy, CBC):  "<iv16_b64>:<ciphertext_b64>"        — no integrity
+  //   v2 (current, GCM): "v2:<iv12_b64>:<ciphertext+tag_b64>" — authenticated
+  //
+  // On load, v1 files are transparently re-saved as v2.
   // ---------------------------------------------------------------------------
+
+  static const _kGcmPrefix = 'v2:';
 
   /// Retrieves the AES-256 key from secure storage, creating it on first use.
   static Future<enc.Key> _getEncKey() async {
@@ -96,24 +104,45 @@ class AppDatabase {
     return key;
   }
 
-  /// Encrypts [plaintext] with AES-256-CBC using a fresh random IV.
-  /// Returns `"<iv_b64>:<ciphertext_b64>"` — no colons appear in base64.
+  /// Encrypts [plaintext] with AES-256-GCM (authenticated encryption).
+  ///
+  /// GCM provides both confidentiality and integrity: any modification to the
+  /// ciphertext on disk will be detected at decryption time and rejected.
+  /// Returns `"v2:<iv_b64>:<ciphertext+tag_b64>"`.
   static String _encryptJson(String plaintext, enc.Key key) {
-    final iv        = enc.IV.fromSecureRandom(16);
-    final encrypter = enc.Encrypter(enc.AES(key));
+    // 12-byte (96-bit) nonce is the GCM standard and the most efficient length.
+    final iv        = enc.IV.fromSecureRandom(12);
+    final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.gcm));
     final cipher    = encrypter.encrypt(plaintext, iv: iv);
-    return '${iv.base64}:${cipher.base64}';
+    return '$_kGcmPrefix${iv.base64}:${cipher.base64}';
   }
 
-  /// Decrypts a value produced by [_encryptJson]. Returns `null` on failure
-  /// (e.g. the file is still in the legacy plaintext format).
+  /// Decrypts a value produced by [_encryptJson].
+  ///
+  /// Handles both the current GCM format (v2:) and the legacy CBC format
+  /// (no prefix) so existing encrypted files migrate automatically on first
+  /// load. Returns `null` on any failure.
   static String? _decryptJson(String content, enc.Key key) {
-    final sep = content.indexOf(':');
-    if (sep == -1) return null;
     try {
-      final iv        = enc.IV.fromBase64(content.substring(0, sep));
-      final encrypter = enc.Encrypter(enc.AES(key));
-      return encrypter.decrypt64(content.substring(sep + 1), iv: iv);
+      if (content.startsWith(_kGcmPrefix)) {
+        // Current format: "v2:<iv12_b64>:<ciphertext+tag_b64>"
+        final body = content.substring(_kGcmPrefix.length);
+        final sep  = body.indexOf(':');
+        if (sep == -1) return null;
+        final iv        = enc.IV.fromBase64(body.substring(0, sep));
+        final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.gcm));
+        // GCM decryption throws StateError if the auth tag doesn't match —
+        // any on-disk tampering is detected here.
+        return encrypter.decrypt64(body.substring(sep + 1), iv: iv);
+      } else {
+        // Legacy CBC format: "<iv16_b64>:<ciphertext_b64>" — no integrity check.
+        // Accepted here only for migration; immediately re-saved as GCM by the caller.
+        final sep = content.indexOf(':');
+        if (sep == -1) return null;
+        final iv        = enc.IV.fromBase64(content.substring(0, sep));
+        final encrypter = enc.Encrypter(enc.AES(key));
+        return encrypter.decrypt64(content.substring(sep + 1), iv: iv);
+      }
     } catch (_) {
       return null;
     }
@@ -130,11 +159,13 @@ class AppDatabase {
           await _save(); // migrates to encrypted format
           return;
         }
-        // Encrypted format: "<iv_b64>:<ciphertext_b64>"
+        // Encrypted format — try GCM (v2:) then legacy CBC for migration.
         final key       = await _getEncKey();
         final decrypted = _decryptJson(content, key);
         if (decrypted != null) {
           _data = jsonDecode(decrypted) as Map<String, dynamic>;
+          // Legacy CBC file (no v2: prefix) — re-save with GCM immediately.
+          if (!content.startsWith(_kGcmPrefix)) await _save();
           return;
         }
       } catch (_) {
