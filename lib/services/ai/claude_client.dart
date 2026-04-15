@@ -5,6 +5,8 @@ import '../../models/calendar_event.dart';
 class ClaudeClient {
   final Dio _dio = Dio(BaseOptions(
     baseUrl: 'https://api.anthropic.com',
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 60),
     headers: {
       'Content-Type': 'application/json',
       'anthropic-version': '2023-06-01',
@@ -27,11 +29,17 @@ class ClaudeClient {
       throw Exception('Claude API key not configured');
     }
 
+    // Attendee emails are PII — send display names only. If no name is
+    // available, substitute a generic placeholder to avoid leaking addresses.
+    final attendeeNames = event.attendees
+        .map((a) => a.name?.isNotEmpty == true ? a.name! : '[attendee]')
+        .join(', ');
+
     final prompt = '''You are an assistant that extracts action items from meeting notes.
 
 Meeting: ${event.title}
 Date: ${event.start}
-Attendees: ${event.attendees.map((a) => a.name ?? a.email).join(', ')}
+Attendees: $attendeeNames
 
 Notes:
 $note

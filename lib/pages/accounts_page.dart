@@ -23,6 +23,34 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     super.dispose();
   }
 
+  /// Returns true if [host] resolves to a private, loopback, or link-local
+  /// address that must not be reachable from a user-supplied ICS URL (SSRF guard).
+  bool _isPrivateHost(String host) {
+    final h = host.toLowerCase();
+    // Named loopback / special hostnames
+    if (h == 'localhost' || h == 'broadcasthost') return true;
+    // IPv6 loopback
+    if (h == '::1' || h == '::' || h.startsWith('[::')) return true;
+
+    // Try dotted-decimal IPv4
+    final parts = h.split('.');
+    if (parts.length == 4) {
+      final octets = parts.map(int.tryParse).toList();
+      if (octets.every((o) => o != null && o >= 0 && o <= 255)) {
+        final a = octets[0]!, b = octets[1]!;
+        if (a == 0) return true;                        // 0.x.x.x
+        if (a == 10) return true;                       // 10/8
+        if (a == 127) return true;                      // 127/8 loopback
+        if (a == 169 && b == 254) return true;          // 169.254/16 link-local / APIPA / cloud metadata
+        if (a == 172 && b >= 16 && b <= 31) return true; // 172.16-31/12
+        if (a == 192 && b == 168) return true;          // 192.168/16
+        if (a == 198 && (b == 18 || b == 19)) return true; // 198.18-19/15 benchmarking
+        if (a == 255) return true;                      // broadcast
+      }
+    }
+    return false;
+  }
+
   void _addIcsAccount() {
     final url = _icsUrlController.text.trim();
     final name = _icsNameController.text.trim();
@@ -36,6 +64,18 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
       );
       return;
     }
+
+    // Block private/loopback hosts to prevent SSRF
+    if (_isPrivateHost(uri.host)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Private or local network addresses are not allowed.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     if (scheme == 'http') {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

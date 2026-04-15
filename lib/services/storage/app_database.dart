@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:encrypt/encrypt.dart' as enc;
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:macos_secure_bookmarks/macos_secure_bookmarks.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,9 +12,14 @@ import '../../models/account.dart';
 import '../../models/todo_task.dart';
 import '../../models/settings.dart';
 
-const _kDataDirKey = 'dataDirectoryPath';
-const _kBookmarkKey = 'dataDirectoryBookmark';
+const _kDataDirKey   = 'dataDirectoryPath';
+const _kBookmarkKey  = 'dataDirectoryBookmark';
 const _kDataFileName = 'calendartask_data.json';
+
+/// Secure-storage key under which the AES-256 database encryption key is kept.
+/// The key itself lives in the macOS Keychain / Windows Credential Manager.
+const _kEncKeyName = 'db-enc-key';
+const _secureStorage = FlutterSecureStorage();
 
 class AppDatabase {
   static AppDatabase? _instance;
@@ -76,15 +83,62 @@ class AppDatabase {
     return '$dir/$_kDataFileName';
   }
 
+  // ---------------------------------------------------------------------------
+  // Encryption helpers (AES-256-CBC, key stored in OS secure storage)
+  // ---------------------------------------------------------------------------
+
+  /// Retrieves the AES-256 key from secure storage, creating it on first use.
+  static Future<enc.Key> _getEncKey() async {
+    final stored = await _secureStorage.read(key: _kEncKeyName);
+    if (stored != null) return enc.Key.fromBase64(stored);
+    final key = enc.Key.fromSecureRandom(32);
+    await _secureStorage.write(key: _kEncKeyName, value: key.base64);
+    return key;
+  }
+
+  /// Encrypts [plaintext] with AES-256-CBC using a fresh random IV.
+  /// Returns `"<iv_b64>:<ciphertext_b64>"` — no colons appear in base64.
+  static String _encryptJson(String plaintext, enc.Key key) {
+    final iv        = enc.IV.fromSecureRandom(16);
+    final encrypter = enc.Encrypter(enc.AES(key));
+    final cipher    = encrypter.encrypt(plaintext, iv: iv);
+    return '${iv.base64}:${cipher.base64}';
+  }
+
+  /// Decrypts a value produced by [_encryptJson]. Returns `null` on failure
+  /// (e.g. the file is still in the legacy plaintext format).
+  static String? _decryptJson(String content, enc.Key key) {
+    final sep = content.indexOf(':');
+    if (sep == -1) return null;
+    try {
+      final iv        = enc.IV.fromBase64(content.substring(0, sep));
+      final encrypter = enc.Encrypter(enc.AES(key));
+      return encrypter.decrypt64(content.substring(sep + 1), iv: iv);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _loadData() async {
     final file = File(_dataFilePath);
     if (file.existsSync()) {
       try {
-        final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
-        _data = json;
-        return;
+        final content = file.readAsStringSync();
+        if (content.trimLeft().startsWith('{')) {
+          // Legacy plaintext JSON — load it and immediately re-save encrypted.
+          _data = jsonDecode(content) as Map<String, dynamic>;
+          await _save(); // migrates to encrypted format
+          return;
+        }
+        // Encrypted format: "<iv_b64>:<ciphertext_b64>"
+        final key       = await _getEncKey();
+        final decrypted = _decryptJson(content, key);
+        if (decrypted != null) {
+          _data = jsonDecode(decrypted) as Map<String, dynamic>;
+          return;
+        }
       } catch (_) {
-        // Fall through to migration if file is corrupt
+        // Fall through to migration if file is corrupt or unreadable
       }
     }
     await _migrateFromPrefs();
@@ -107,7 +161,9 @@ class AppDatabase {
 
   Future<void> _save() async {
     _writingInternally = true;
-    await File(_dataFilePath).writeAsString(jsonEncode(_data), flush: true);
+    final key       = await _getEncKey();
+    final encrypted = _encryptJson(jsonEncode(_data), key);
+    await File(_dataFilePath).writeAsString(encrypted, flush: true);
     // Allow extra time for the OS / sync daemon to process our own write
     // before we start treating file events as external changes.
     Future.delayed(const Duration(seconds: 3), () {
@@ -149,8 +205,15 @@ class AppDatabase {
     final file = File(_dataFilePath);
     if (!file.existsSync()) return;
     try {
-      final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
-      _data = json;
+      final content = file.readAsStringSync();
+      final String jsonStr;
+      if (content.trimLeft().startsWith('{')) {
+        jsonStr = content; // legacy plaintext (migration in progress)
+      } else {
+        final key = await _getEncKey();
+        jsonStr   = _decryptJson(content, key) ?? '{}';
+      }
+      _data = jsonDecode(jsonStr) as Map<String, dynamic>;
       debugPrint('[DB] Reloaded data from external change');
       _externalChangeController.add(null);
     } catch (e) {
@@ -188,8 +251,10 @@ class AppDatabase {
         // No write needed; the new instance will load it on next init.
         debugPrint('[DB] Adopting existing data file at $newPath');
       } else {
-        // New location — copy current data there.
-        await File(newPath).writeAsString(jsonEncode(inst._data), flush: true);
+        // New location — copy current data there (encrypted).
+        final key       = await _getEncKey();
+        final encrypted = _encryptJson(jsonEncode(inst._data), key);
+        await File(newPath).writeAsString(encrypted, flush: true);
         debugPrint('[DB] Wrote data to new location $newPath');
       }
     }
@@ -380,19 +445,54 @@ class AppDatabase {
   }
 
   Future<Map<String, dynamic>> importData(String jsonStr) async {
-    final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+    final Map<String, dynamic> data;
+    try {
+      data = jsonDecode(jsonStr) as Map<String, dynamic>;
+    } catch (_) {
+      throw Exception('Import file is not valid JSON.');
+    }
+
+    var historyCount = 0;
+    var todoCount = 0;
+
+    // Validate and deserialise each record individually so a single malformed
+    // entry cannot crash the app or overwrite the store with garbage data.
     if (data.containsKey('meetingHistory')) {
-      _data['meetingHistory'] = data['meetingHistory'];
+      final raw = data['meetingHistory'];
+      if (raw is! List) throw Exception('Invalid import format: meetingHistory must be a list.');
+      final validated = <Map<String, dynamic>>[];
+      for (final item in raw) {
+        try {
+          final record = MeetingRecord.fromJson(item as Map<String, dynamic>);
+          validated.add(record.toJson());
+          historyCount++;
+        } catch (e) {
+          debugPrint('[DB] Skipping invalid meeting record during import: $e');
+        }
+      }
+      _data['meetingHistory'] = validated;
     }
+
     if (data.containsKey('todos')) {
-      _data['todos'] = data['todos'];
+      final raw = data['todos'];
+      if (raw is! List) throw Exception('Invalid import format: todos must be a list.');
+      final validated = <Map<String, dynamic>>[];
+      for (final item in raw) {
+        try {
+          final todo = TodoTask.fromJson(item as Map<String, dynamic>);
+          validated.add(todo.toJson());
+          todoCount++;
+        } catch (e) {
+          debugPrint('[DB] Skipping invalid todo during import: $e');
+        }
+      }
+      _data['todos'] = validated;
     }
+
     await _save();
-    final history = (data['meetingHistory'] as List<dynamic>?)?.length ?? 0;
-    final todos = (data['todos'] as List<dynamic>?)?.length ?? 0;
     return {
-      'meetingHistoryCount': history,
-      'todoTaskCount': todos,
+      'meetingHistoryCount': historyCount,
+      'todoTaskCount': todoCount,
       'exportedAt': data['exportedAt'] ?? '',
     };
   }
