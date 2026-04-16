@@ -4,7 +4,7 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
-## [3.1.0] — 2026-04-16
+## [3.1.1] — 2026-04-16
 
 ### Added
 - **Account rename** — tap the edit icon on any account tile to rename its display name inline, consistent with the existing colour picker interaction
