@@ -146,6 +146,20 @@ class TodosNotifier extends StateNotifier<List<TodoTask>> {
   Future<void> _load() async {
     final db = await AppDatabase.getInstance();
     state = db.getTodos();
+    await _resumeExpiredHolds(db);
+  }
+
+  /// Auto-resume any onHold tasks whose holdUntil timestamp has passed.
+  Future<void> _resumeExpiredHolds(AppDatabase db) async {
+    final now = DateTime.now();
+    final expired = state.where((t) =>
+        t.status == TodoStatus.onHold &&
+        t.holdUntil != null &&
+        DateTime.tryParse(t.holdUntil!)?.isBefore(now) == true);
+    for (final task in expired) {
+      await db.updateTodo(task.id, {'status': 'pending', 'holdUntil': null});
+    }
+    if (expired.isNotEmpty) state = db.getTodos();
   }
 
   Future<void> addTodo(TodoTask task) async {

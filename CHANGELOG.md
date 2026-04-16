@@ -4,6 +4,17 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.1.4] — 2026-04-16
+
+### Added
+- **On Hold status** — tasks can be put on hold with a resume date and time; escalation is paused while on hold
+- **Auto-resume** — on-hold tasks automatically move back to Pending when the hold period expires (checked on every app launch)
+- **Hold-until display** — task cards show "Resumes MMM d, yyyy – h:mm a" while on hold
+- **On Hold filter chip** — filter task list to show only on-hold tasks
+- Sort order updated: In Progress → Pending → On Hold → Done
+
+---
+
 ## [3.1.3] — 2026-04-16
 
 ### Added

@@ -46,8 +46,14 @@ class _TodosPageState extends ConsumerState<TodosPage> {
         .toList();
 
     filtered.sort((a, b) {
-      if (a.status == TodoStatus.done && b.status != TodoStatus.done) return 1;
-      if (a.status != TodoStatus.done && b.status == TodoStatus.done) return -1;
+      int rank(TodoStatus s) => switch (s) {
+            TodoStatus.inProgress => 0,
+            TodoStatus.pending => 1,
+            TodoStatus.onHold => 2,
+            TodoStatus.done => 3,
+          };
+      final r = rank(a.status).compareTo(rank(b.status));
+      if (r != 0) return r;
       return b.effectivePriority.compareTo(a.effectivePriority);
     });
 
@@ -84,11 +90,15 @@ class _TodosPageState extends ConsumerState<TodosPage> {
           Wrap(
             spacing: 8,
             children: [
-              for (final filter in ['all', 'pending', 'inProgress', 'done'])
+              for (final filter in ['all', 'pending', 'inProgress', 'done', 'onHold'])
                 ChoiceChip(
-                  label: Text(filter == 'inProgress'
-                      ? 'In Progress'
-                      : filter[0].toUpperCase() + filter.substring(1)),
+                  label: Text({
+                    'all': 'All',
+                    'pending': 'Pending',
+                    'inProgress': 'In Progress',
+                    'done': 'Done',
+                    'onHold': 'On Hold',
+                  }[filter]!),
                   selected: _filterStatus == filter,
                   onSelected: (_) => setState(() => _filterStatus = filter),
                   selectedColor: CatppuccinMocha.blue.withValues(alpha: 0.2),
@@ -423,13 +433,39 @@ class _TodoCard extends ConsumerWidget {
       color: CatppuccinMocha.green,
       label: 'Done',
     ),
+    TodoStatus.onHold: (
+      icon: Icons.pause_circle_outline,
+      color: CatppuccinMocha.mauve,
+      label: 'On Hold',
+    ),
   };
 
   Color get _borderColor {
     if (task.status == TodoStatus.done) return CatppuccinMocha.green;
     if (task.status == TodoStatus.inProgress) return CatppuccinMocha.yellow;
+    if (task.status == TodoStatus.onHold) return CatppuccinMocha.mauve;
     if (task.effectivePriority >= 4) return CatppuccinMocha.red;
     return CatppuccinMocha.blue;
+  }
+
+  Future<void> _onStatusSelected(
+      BuildContext context, WidgetRef ref, TodoStatus status) async {
+    if (status == TodoStatus.onHold) {
+      final holdUntil = await showDialog<DateTime>(
+        context: context,
+        builder: (_) => const _HoldUntilDialog(),
+      );
+      if (holdUntil == null) return; // cancelled
+      await ref.read(todosProvider.notifier).updateTodo(task.id, {
+        'status': 'onHold',
+        'holdUntil': holdUntil.toIso8601String(),
+      });
+    } else {
+      await ref.read(todosProvider.notifier).updateTodo(task.id, {
+        'status': status.name,
+        'holdUntil': null,
+      });
+    }
   }
 
   @override
@@ -482,9 +518,8 @@ class _TodoCard extends ConsumerWidget {
             child: Tooltip(
               message: 'Change status',
               child: PopupMenuButton<TodoStatus>(
-                onSelected: (status) => ref
-                    .read(todosProvider.notifier)
-                    .updateTodo(task.id, {'status': status.name}),
+                onSelected: (status) =>
+                    _onStatusSelected(context, ref, status),
                 itemBuilder: (_) => _statusConfig.entries.map((e) {
                   final selected = e.key == task.status;
                   return PopupMenuItem(
@@ -576,6 +611,26 @@ class _TodoCard extends ConsumerWidget {
                         fontSize: 12, color: CatppuccinMocha.overlay0),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+
+                // Hold-until row
+                if (task.status == TodoStatus.onHold && task.holdUntil != null) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.schedule,
+                          size: 11, color: CatppuccinMocha.mauve),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Resumes ${DateFormat('MMM d, yyyy – h:mm a').format(DateTime.parse(task.holdUntil!).toLocal())}',
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: CatppuccinMocha.mauve,
+                            fontWeight: FontWeight.w500),
+                      ),
+                    ],
                   ),
                 ],
 
@@ -675,6 +730,206 @@ class _TodoCard extends ConsumerWidget {
     );
   }
 }
+
+// ── Hold Until dialog ──────────────────────────────────────────────────────────
+
+class _HoldUntilDialog extends StatefulWidget {
+  const _HoldUntilDialog();
+
+  @override
+  State<_HoldUntilDialog> createState() => _HoldUntilDialogState();
+}
+
+class _HoldUntilDialogState extends State<_HoldUntilDialog> {
+  DateTime _holdUntil = DateTime.now().add(const Duration(days: 1));
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _holdUntil,
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2100),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: CatppuccinMocha.mauve,
+            onPrimary: CatppuccinMocha.base,
+            surface: CatppuccinMocha.surface0,
+            onSurface: CatppuccinMocha.text,
+          ),
+          dialogTheme:
+              const DialogThemeData(backgroundColor: CatppuccinMocha.base),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) {
+      setState(() => _holdUntil = DateTime(
+            picked.year, picked.month, picked.day,
+            _holdUntil.hour, _holdUntil.minute,
+          ));
+    }
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_holdUntil),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.dark(
+            primary: CatppuccinMocha.mauve,
+            onPrimary: CatppuccinMocha.base,
+            surface: CatppuccinMocha.surface0,
+            onSurface: CatppuccinMocha.text,
+          ),
+          dialogTheme:
+              const DialogThemeData(backgroundColor: CatppuccinMocha.base),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) {
+      setState(() => _holdUntil = DateTime(
+            _holdUntil.year, _holdUntil.month, _holdUntil.day,
+            picked.hour, picked.minute,
+          ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: CatppuccinMocha.base,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400, minWidth: 320),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.pause_circle_outline,
+                      color: CatppuccinMocha.mauve, size: 20),
+                  SizedBox(width: 8),
+                  Text('Put on Hold',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: CatppuccinMocha.text)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'The task will automatically resume to Pending at the selected date and time.',
+                style: TextStyle(
+                    fontSize: 12, color: CatppuccinMocha.overlay0),
+              ),
+              const SizedBox(height: 20),
+
+              const Text('Resume on',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: CatppuccinMocha.subtext1)),
+              const SizedBox(height: 8),
+
+              // Date row
+              Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: _pickDate,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: CatppuccinMocha.surface0,
+                          borderRadius: BorderRadius.circular(8),
+                          border:
+                              Border.all(color: CatppuccinMocha.surface2),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.calendar_today,
+                                size: 14, color: CatppuccinMocha.mauve),
+                            const SizedBox(width: 8),
+                            Text(
+                              DateFormat('MMM d, yyyy').format(_holdUntil),
+                              style: const TextStyle(
+                                  fontSize: 13, color: CatppuccinMocha.text),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: InkWell(
+                      onTap: _pickTime,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: CatppuccinMocha.surface0,
+                          borderRadius: BorderRadius.circular(8),
+                          border:
+                              Border.all(color: CatppuccinMocha.surface2),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.access_time,
+                                size: 14, color: CatppuccinMocha.mauve),
+                            const SizedBox(width: 8),
+                            Text(
+                              DateFormat('h:mm a').format(_holdUntil),
+                              style: const TextStyle(
+                                  fontSize: 13, color: CatppuccinMocha.text),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: TextButton.styleFrom(
+                        foregroundColor: CatppuccinMocha.overlay0),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(_holdUntil),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: CatppuccinMocha.mauve,
+                      foregroundColor: CatppuccinMocha.base,
+                    ),
+                    child: const Text('Put on Hold'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Badge ──────────────────────────────────────────────────────────────────────
 
 class _Badge extends StatelessWidget {
   final String label;

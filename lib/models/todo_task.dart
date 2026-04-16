@@ -1,4 +1,4 @@
-enum TodoStatus { pending, inProgress, done }
+enum TodoStatus { pending, inProgress, done, onHold }
 
 class TodoTask {
   final String id;
@@ -9,6 +9,8 @@ class TodoTask {
   final String? dueDate;
   final String createdAt;
   final String? meetingEventId;
+  /// ISO 8601 timestamp — when an onHold task should auto-resume to pending.
+  final String? holdUntil;
 
   TodoTask({
     required this.id,
@@ -19,13 +21,17 @@ class TodoTask {
     this.dueDate,
     required this.createdAt,
     this.meetingEventId,
+    this.holdUntil,
   });
 
-  /// Auto-escalation: after 2 days, priority increases by 1/day, capped at 5
+  /// Auto-escalation: after 2 days, priority increases by 1/day, capped at 5.
+  /// Escalation is paused while the task is onHold.
   int get effectivePriority {
     final created = DateTime.parse(createdAt);
     final daysSince = DateTime.now().difference(created).inDays;
-    if (daysSince <= 2 || status == TodoStatus.done) return priority;
+    if (daysSince <= 2 || status == TodoStatus.done || status == TodoStatus.onHold) {
+      return priority;
+    }
     final escalation = daysSince - 2;
     return (priority + escalation).clamp(1, 5);
   }
@@ -33,36 +39,59 @@ class TodoTask {
   bool get isEscalated => effectivePriority > priority;
 
   TodoTask copyWith({
-    String? title, String? description, int? priority,
-    TodoStatus? status, String? dueDate,
-  }) => TodoTask(
-    id: id,
-    title: title ?? this.title,
-    description: description ?? this.description,
-    priority: priority ?? this.priority,
-    status: status ?? this.status,
-    dueDate: dueDate ?? this.dueDate,
-    createdAt: createdAt,
-    meetingEventId: meetingEventId,
-  );
+    String? title,
+    String? description,
+    int? priority,
+    TodoStatus? status,
+    String? dueDate,
+    Object? holdUntil = _sentinel,
+  }) =>
+      TodoTask(
+        id: id,
+        title: title ?? this.title,
+        description: description ?? this.description,
+        priority: priority ?? this.priority,
+        status: status ?? this.status,
+        dueDate: dueDate ?? this.dueDate,
+        createdAt: createdAt,
+        meetingEventId: meetingEventId,
+        holdUntil: holdUntil == _sentinel
+            ? this.holdUntil
+            : holdUntil as String?,
+      );
 
   Map<String, dynamic> toJson() => {
-    'id': id, 'title': title, 'description': description,
-    'priority': priority, 'status': status.name,
-    'dueDate': dueDate, 'createdAt': createdAt,
-    'meetingEventId': meetingEventId,
-  };
+        'id': id,
+        'title': title,
+        'description': description,
+        'priority': priority,
+        'status': status.name,
+        'dueDate': dueDate,
+        'createdAt': createdAt,
+        'meetingEventId': meetingEventId,
+        'holdUntil': holdUntil,
+      };
 
   factory TodoTask.fromJson(Map<String, dynamic> json) => TodoTask(
-    id: json['id'] as String,
-    title: json['title'] as String,
-    description: json['description'] as String?,
-    priority: json['priority'] as int? ?? 3,
-    status: TodoStatus.values.byName(json['status'] as String? ?? 'pending'),
-    dueDate: json['dueDate'] as String?,
-    createdAt: json['createdAt'] as String,
-    meetingEventId: json['meetingEventId'] as String?,
-  );
+        id: json['id'] as String,
+        title: json['title'] as String,
+        description: json['description'] as String?,
+        priority: json['priority'] as int? ?? 3,
+        status: TodoStatus.values.byName(
+            json['status'] as String? ?? 'pending'),
+        dueDate: json['dueDate'] as String?,
+        createdAt: json['createdAt'] as String,
+        meetingEventId: json['meetingEventId'] as String?,
+        holdUntil: json['holdUntil'] as String?,
+      );
 
-  static const priorityLabels = {1: 'Low', 2: 'Medium-Low', 3: 'Medium', 4: 'High', 5: 'Critical'};
+  static const priorityLabels = {
+    1: 'Low',
+    2: 'Medium-Low',
+    3: 'Medium',
+    4: 'High',
+    5: 'Critical'
+  };
 }
+
+const _sentinel = Object();
