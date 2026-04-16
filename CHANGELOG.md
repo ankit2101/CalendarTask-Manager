@@ -4,6 +4,13 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.1.2] — 2026-04-16
+
+### Changed
+- No functional changes; version bump to trigger clean CI release build
+
+---
+
 ## [3.1.1] — 2026-04-16
 
 ### Added

@@ -2,7 +2,7 @@ name: calendar_task_manager
 description: "A Flutter CalendarTask Manager app."
 publish_to: 'none'
 
-version: 3.1.1+1
+version: 3.1.2+1
 
 environment:
   sdk: ^3.11.4
