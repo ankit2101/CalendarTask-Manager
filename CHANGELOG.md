@@ -4,6 +4,17 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.1.0] — 2026-04-16
+
+### Added
+- **Account rename** — tap the edit icon on any account tile to rename its display name inline, consistent with the existing colour picker interaction
+
+### Fixed
+- **Colour picker black bug** — `colorToHex` now correctly multiplies normalised r/g/b channels by 255 before hex encoding; selecting black no longer produced wrong colours
+- **Per-calendar colour on event cards** — event cards now show the correct account colour as a left border
+
+---
+
 ## [3.0.9] — 2026-04-15
 
 ### Fixed

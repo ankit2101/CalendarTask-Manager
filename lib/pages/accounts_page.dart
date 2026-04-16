@@ -161,6 +161,20 @@ class _AccountTile extends ConsumerStatefulWidget {
 
 class _AccountTileState extends ConsumerState<_AccountTile> {
   bool _pickerOpen = false;
+  bool _renameOpen = false;
+  late final TextEditingController _nameController;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.account.displayName);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
 
   Color get _currentColor =>
       accountColor(widget.account.id, customHex: widget.account.color);
@@ -173,6 +187,16 @@ class _AccountTileState extends ConsumerState<_AccountTile> {
     setState(() => _pickerOpen = false);
     // Refresh calendar events so card borders update immediately.
     ref.read(eventsProvider.notifier).refresh();
+  }
+
+  void _submitRename() {
+    final newName = _nameController.text.trim();
+    if (newName.isNotEmpty && newName != widget.account.displayName) {
+      ref.read(accountsProvider.notifier).updateAccount(
+            widget.account.copyWith(displayName: newName),
+          );
+    }
+    setState(() => _renameOpen = false);
   }
 
   @override
@@ -234,6 +258,29 @@ class _AccountTileState extends ConsumerState<_AccountTile> {
                   ),
                 ),
 
+                // Rename button
+                Tooltip(
+                  message: 'Rename account',
+                  child: IconButton(
+                    icon: Icon(
+                      Icons.edit_outlined,
+                      size: 18,
+                      color: _renameOpen
+                          ? CatppuccinMocha.text
+                          : CatppuccinMocha.overlay0,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _renameOpen = !_renameOpen;
+                        if (_renameOpen) {
+                          _nameController.text = widget.account.displayName;
+                          _pickerOpen = false;
+                        }
+                      });
+                    },
+                  ),
+                ),
+
                 // Delete button
                 IconButton(
                   icon: const Icon(Icons.delete_outline,
@@ -248,6 +295,53 @@ class _AccountTileState extends ConsumerState<_AccountTile> {
               ],
             ),
           ),
+
+          // Inline rename field (shown when edit icon tapped)
+          if (_renameOpen)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(color: CatppuccinMocha.surface1, height: 1),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Rename account',
+                    style: TextStyle(
+                        color: CatppuccinMocha.overlay0,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _nameController,
+                          autofocus: true,
+                          style: const TextStyle(
+                              color: CatppuccinMocha.text, fontSize: 14),
+                          decoration: const InputDecoration(
+                              isDense: true,
+                              hintText: 'Display name'),
+                          onSubmitted: (_) => _submitRename(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: _submitRename,
+                        child: const Text('Save'),
+                      ),
+                      TextButton(
+                        onPressed: () => setState(() => _renameOpen = false),
+                        child: const Text('Cancel'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
 
           // Inline colour picker (shown when swatch tapped)
           if (_pickerOpen)
