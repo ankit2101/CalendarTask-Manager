@@ -4,6 +4,13 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.1.3] — 2026-04-16
+
+### Added
+- **Task status picker** — tapping the status icon now opens a popup menu to directly select any status (To Do / In Progress / Done), replacing the forward-only cycle; current status is highlighted with a checkmark
+
+---
+
 ## [3.1.2] — 2026-04-16
 
 ### Changed

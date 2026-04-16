@@ -412,22 +412,16 @@ class _TodoCard extends ConsumerWidget {
       icon: Icons.radio_button_unchecked,
       color: CatppuccinMocha.overlay0,
       label: 'To Do',
-      next: TodoStatus.inProgress,
-      tooltip: 'Mark as In Progress',
     ),
     TodoStatus.inProgress: (
       icon: Icons.timelapse,
       color: CatppuccinMocha.yellow,
       label: 'In Progress',
-      next: TodoStatus.done,
-      tooltip: 'Mark as Done',
     ),
     TodoStatus.done: (
       icon: Icons.check_circle,
       color: CatppuccinMocha.green,
       label: 'Done',
-      next: TodoStatus.pending,
-      tooltip: 'Reset to To Do',
     ),
   };
 
@@ -482,15 +476,44 @@ class _TodoCard extends ConsumerWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 3-state status icon — tap to cycle
+          // Status icon — tap to open status picker
           Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Tooltip(
-              message: cfg.tooltip,
-              child: GestureDetector(
-                onTap: () => ref
+              message: 'Change status',
+              child: PopupMenuButton<TodoStatus>(
+                onSelected: (status) => ref
                     .read(todosProvider.notifier)
-                    .updateTodo(task.id, {'status': cfg.next.name}),
+                    .updateTodo(task.id, {'status': status.name}),
+                itemBuilder: (_) => _statusConfig.entries.map((e) {
+                  final selected = e.key == task.status;
+                  return PopupMenuItem(
+                    value: e.key,
+                    child: Row(
+                      children: [
+                        Icon(e.value.icon, color: e.value.color, size: 18),
+                        const SizedBox(width: 10),
+                        Text(
+                          e.value.label,
+                          style: TextStyle(
+                            color: selected
+                                ? CatppuccinMocha.text
+                                : CatppuccinMocha.subtext0,
+                            fontWeight: selected
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
+                        ),
+                        if (selected) ...[
+                          const Spacer(),
+                          const Icon(Icons.check,
+                              size: 14, color: CatppuccinMocha.green),
+                        ],
+                      ],
+                    ),
+                  );
+                }).toList(),
+                padding: EdgeInsets.zero,
                 child: Icon(cfg.icon, color: cfg.color, size: 24),
               ),
             ),
