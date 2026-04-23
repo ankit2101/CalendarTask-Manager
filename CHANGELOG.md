@@ -4,6 +4,13 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.1.6] — 2026-04-23
+
+### Added
+- **Cross-machine sync via OneDrive / iCloud / Dropbox** — when you point the app to a shared cloud folder, a companion key file (`calendartask_key.b64`) is written alongside the data file. All machines using that folder share the same encryption key, so each machine can read data written by the other. The sync folder setting is now available on both macOS and Windows.
+
+---
+
 ## [3.1.5] — 2026-04-23
 
 ### Changed

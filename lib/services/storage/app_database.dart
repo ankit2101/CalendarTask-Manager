@@ -16,6 +16,10 @@ const _kDataDirKey   = 'dataDirectoryPath';
 const _kBookmarkKey  = 'dataDirectoryBookmark';
 const _kDataFileName = 'calendartask_data.json';
 
+// Companion key file stored alongside the data file so multiple machines
+// pointing at the same OneDrive / iCloud / Dropbox folder share one key.
+const _kKeyFileName  = 'calendartask_key.b64';
+
 /// Secure-storage key under which the AES-256 database encryption key is kept.
 /// The key itself lives in the macOS Keychain / Windows Credential Manager,
 /// with SharedPreferences as a fallback when the entitlement is unavailable.
@@ -110,32 +114,69 @@ class AppDatabase {
 
   static const _kGcmPrefix = 'v2:';
 
-  /// Retrieves the AES-256 key from secure storage, creating it on first use.
+  /// Retrieves the AES-256 key, using a three-tier priority:
   ///
-  /// Falls back to SharedPreferences when Keychain is unavailable (e.g. ad-hoc
-  /// signed macOS builds that lack the keychain-access-groups entitlement).
-  static Future<enc.Key> _getEncKey() async {
+  /// 1. **Key file** (`calendartask_key.b64`) in the same directory as the data
+  ///    file — present when the user has chosen a shared sync folder (OneDrive,
+  ///    iCloud, Dropbox). All machines pointing at that folder share this key.
+  /// 2. **OS Keychain** (macOS Keychain / Windows Credential Manager) — used
+  ///    for the default local-only location.
+  /// 3. **SharedPreferences** — fallback when the Keychain entitlement is absent
+  ///    (e.g. ad-hoc signed builds).
+  ///
+  /// When a key is generated for the first time it is written to whichever tier
+  /// is appropriate so subsequent launches (and the second machine) can read it.
+  static Future<enc.Key> _getEncKey({String? dataDir}) async {
+    // Tier 1: shared key file in the sync folder.
+    if (dataDir != null) {
+      final keyFile = File('$dataDir/$_kKeyFileName');
+      if (keyFile.existsSync()) {
+        try {
+          return enc.Key.fromBase64(keyFile.readAsStringSync().trim());
+        } catch (e) {
+          debugPrint('[DB] Key file unreadable, falling through: $e');
+        }
+      }
+    }
+
+    // Tier 2: OS Keychain.
     if (await _isKeychainAvailable()) {
       try {
         final stored = await _secureStorage.read(key: _kEncKeyName);
-        if (stored != null) return enc.Key.fromBase64(stored);
+        if (stored != null) {
+          // Opportunistically write to key file so second machine can pick it up.
+          if (dataDir != null) _writeKeyFile(dataDir, stored);
+          return enc.Key.fromBase64(stored);
+        }
         final key = enc.Key.fromSecureRandom(32);
         await _secureStorage.write(key: _kEncKeyName, value: key.base64);
+        if (dataDir != null) _writeKeyFile(dataDir, key.base64);
         return key;
       } catch (_) {
         // Unexpected error — fall through to SharedPreferences fallback.
       }
     }
 
-    // SharedPreferences fallback: less secure (stored in plist) but prevents
-    // app crash when the Keychain entitlement is absent.
+    // Tier 3: SharedPreferences fallback.
     final prefs = await SharedPreferences.getInstance();
     const fallbackKey = 'enc_key_fallback';
     final stored = prefs.getString(fallbackKey);
-    if (stored != null) return enc.Key.fromBase64(stored);
+    if (stored != null) {
+      if (dataDir != null) _writeKeyFile(dataDir, stored);
+      return enc.Key.fromBase64(stored);
+    }
     final key = enc.Key.fromSecureRandom(32);
     await prefs.setString(fallbackKey, key.base64);
+    if (dataDir != null) _writeKeyFile(dataDir, key.base64);
     return key;
+  }
+
+  static void _writeKeyFile(String dir, String base64Key) {
+    try {
+      File('$dir/$_kKeyFileName').writeAsStringSync(base64Key, flush: true);
+    } catch (e) {
+      debugPrint('[DB] Could not write key file: $e');
+    }
   }
 
   /// Encrypts [plaintext] with AES-256-GCM (authenticated encryption).
@@ -194,7 +235,7 @@ class AppDatabase {
           return;
         }
         // Encrypted format — try GCM (v2:) then legacy CBC for migration.
-        final key       = await _getEncKey();
+        final key       = await _getEncKey(dataDir: File(_dataFilePath).parent.path);
         final decrypted = _decryptJson(content, key);
         if (decrypted != null) {
           _data = jsonDecode(decrypted) as Map<String, dynamic>;
@@ -226,7 +267,7 @@ class AppDatabase {
 
   Future<void> _save() async {
     _writingInternally = true;
-    final key       = await _getEncKey();
+    final key       = await _getEncKey(dataDir: File(_dataFilePath).parent.path);
     final encrypted = _encryptJson(jsonEncode(_data), key);
     await File(_dataFilePath).writeAsString(encrypted, flush: true);
     // Allow extra time for the OS / sync daemon to process our own write
@@ -275,7 +316,7 @@ class AppDatabase {
       if (content.trimLeft().startsWith('{')) {
         jsonStr = content; // legacy plaintext (migration in progress)
       } else {
-        final key = await _getEncKey();
+        final key = await _getEncKey(dataDir: file.parent.path);
         jsonStr   = _decryptJson(content, key) ?? '{}';
       }
       _data = jsonDecode(jsonStr) as Map<String, dynamic>;
@@ -317,7 +358,7 @@ class AppDatabase {
         debugPrint('[DB] Adopting existing data file at $newPath');
       } else {
         // New location — copy current data there (encrypted).
-        final key       = await _getEncKey();
+        final key       = await _getEncKey(dataDir: newDir);
         final encrypted = _encryptJson(jsonEncode(inst._data), key);
         await File(newPath).writeAsString(encrypted, flush: true);
         debugPrint('[DB] Wrote data to new location $newPath');
