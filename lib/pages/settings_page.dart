@@ -312,19 +312,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ],
           ),
 
-          if (Platform.isMacOS) ...[
+          ...[
             const SizedBox(height: 24),
             const Divider(),
             const SizedBox(height: 16),
             const Text('Sync File', style: TextStyle(fontWeight: FontWeight.w600, color: CatppuccinMocha.text)),
             const SizedBox(height: 4),
             const Text(
-              'Point all your Macs to the same file in iCloud Drive or Dropbox and the app will sync automatically whenever it changes.',
+              'Point all your machines to the same folder in OneDrive, iCloud Drive, or Dropbox and the app will sync automatically whenever the file changes.',
               style: TextStyle(fontSize: 13, color: CatppuccinMocha.overlay0),
             ),
             const SizedBox(height: 4),
             const Text(
-              'The data file is always named calendartask_data.json. Choose the folder where it lives.',
+              'Two files are stored: calendartask_data.json (your data) and calendartask_key.b64 (shared encryption key). Both must be in the same folder on every machine.',
               style: TextStyle(fontSize: 12, color: CatppuccinMocha.overlay0),
             ),
             const SizedBox(height: 10),
