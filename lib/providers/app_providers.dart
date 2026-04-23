@@ -186,6 +186,15 @@ class TodosNotifier extends StateNotifier<List<TodoTask>> {
     state = db.getTodos();
   }
 
+  Future<void> mergeTodos(List<String> ids, TodoTask mergedTask) async {
+    final db = await AppDatabase.getInstance();
+    await db.addTodo(mergedTask);
+    for (final id in ids) {
+      await db.deleteTodo(id);
+    }
+    state = db.getTodos();
+  }
+
   void reload() => _load();
 }
 

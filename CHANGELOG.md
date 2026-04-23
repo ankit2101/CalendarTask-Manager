@@ -4,6 +4,14 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.1.5] — 2026-04-23
+
+### Changed
+- **Model list updated** — removed retired Claude 3 and 3.5 models (`claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022`, `claude-3-haiku-20240307`) that returned "Model not found" errors; replaced with current Claude 4.x models: Opus 4.7, Sonnet 4.6, and Haiku 4.5
+- Users with a retired model saved in settings automatically fall back to the default (Claude Sonnet 4)
+
+---
+
 ## [3.1.4] — 2026-04-16
 
 ### Added
