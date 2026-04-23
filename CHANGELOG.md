@@ -4,6 +4,50 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.1.5] — 2026-04-23
+
+### Changed
+- **Model list updated** — removed retired Claude 3 and 3.5 models (`claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022`, `claude-3-haiku-20240307`) that returned "Model not found" errors; replaced with current Claude 4.x models: Opus 4.7, Sonnet 4.6, and Haiku 4.5
+- Users with a retired model saved in settings automatically fall back to the default (Claude Sonnet 4)
+
+---
+
+## [3.1.4] — 2026-04-16
+
+### Added
+- **On Hold status** — tasks can be put on hold with a resume date and time; escalation is paused while on hold
+- **Auto-resume** — on-hold tasks automatically move back to Pending when the hold period expires (checked on every app launch)
+- **Hold-until display** — task cards show "Resumes MMM d, yyyy – h:mm a" while on hold
+- **On Hold filter chip** — filter task list to show only on-hold tasks
+- Sort order updated: In Progress → Pending → On Hold → Done
+
+---
+
+## [3.1.3] — 2026-04-16
+
+### Added
+- **Task status picker** — tapping the status icon now opens a popup menu to directly select any status (To Do / In Progress / Done), replacing the forward-only cycle; current status is highlighted with a checkmark
+
+---
+
+## [3.1.2] — 2026-04-16
+
+### Changed
+- No functional changes; version bump to trigger clean CI release build
+
+---
+
+## [3.1.1] — 2026-04-16
+
+### Added
+- **Account rename** — tap the edit icon on any account tile to rename its display name inline, consistent with the existing colour picker interaction
+
+### Fixed
+- **Colour picker black bug** — `colorToHex` now correctly multiplies normalised r/g/b channels by 255 before hex encoding; selecting black no longer produced wrong colours
+- **Per-calendar colour on event cards** — event cards now show the correct account colour as a left border
+
+---
+
 ## [3.0.9] — 2026-04-15
 
 ### Fixed
