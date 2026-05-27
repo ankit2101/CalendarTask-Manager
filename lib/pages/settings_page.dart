@@ -358,7 +358,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       dialogTitle: 'Choose Sync Folder',
                     );
                     if (picked == null) return;
-                    await AppDatabase.changeDataDirectory(picked);
+                    final adoptedExisting = await AppDatabase.changeDataDirectory(picked);
                     // Reload all data providers from new location
                     final db = await AppDatabase.getInstance();
                     // Re-activate watcher on new path
@@ -372,9 +372,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     final newPath = await AppDatabase.getDataFilePath();
                     setState(() => _dataFilePath = newPath);
                     if (context.mounted) {
+                      final message = adoptedExisting
+                          ? 'Loaded existing data file from $newPath'
+                          : 'Created new data file at $newPath';
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('Sync folder set. Data file: $newPath'),
+                          content: Text(message),
                           duration: const Duration(seconds: 6),
                         ),
                       );
