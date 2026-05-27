@@ -4,6 +4,14 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.1.7] — 2026-05-27
+
+### Fixed
+- **Data file no longer overwritten on key mismatch** — when choosing a sync folder whose data file cannot be decrypted yet (e.g. the shared key file has not finished syncing from OneDrive/iCloud/Dropbox), the app now preserves the existing file and shows empty data until the key file arrives. Previously, a failed decryption would trigger a migration that silently overwrote the shared file with empty data.
+- **Clearer sync folder feedback** — the confirmation message after choosing a folder now distinguishes between "Loaded existing data file from …" (existing file adopted) and "Created new data file at …" (new file written).
+
+---
+
 ## [3.1.6] — 2026-04-23
 
 ### Added

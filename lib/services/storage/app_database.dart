@@ -243,10 +243,19 @@ class AppDatabase {
           if (!content.startsWith(_kGcmPrefix)) await _save();
           return;
         }
-      } catch (_) {
-        // Fall through to migration if file is corrupt or unreadable
+        // Decryption failed — file exists but key may not have synced yet.
+        // Preserve the file; use empty in-memory state so nothing is written.
+        debugPrint('[DB] Could not decrypt existing data file — preserving file, using empty state');
+        _data = {};
+        return;
+      } catch (e) {
+        // I/O or parse error — same policy: preserve the file, use empty state.
+        debugPrint('[DB] Error reading data file: $e — preserving file, using empty state');
+        _data = {};
+        return;
       }
     }
+    // File genuinely does not exist — migrate from SharedPreferences.
     await _migrateFromPrefs();
   }
 
@@ -346,15 +355,21 @@ class AppDatabase {
     return '$dir/$_kDataFileName';
   }
 
-  static Future<void> changeDataDirectory(String newDir) async {
+  /// Changes the data directory.
+  ///
+  /// Returns `true` if an existing data file was found in [newDir] and adopted,
+  /// or `false` if a new file was created by copying the current data there.
+  static Future<bool> changeDataDirectory(String newDir) async {
     final prefs = await SharedPreferences.getInstance();
     final inst = _instance;
+    bool adoptedExisting = false;
     if (inst != null) {
       final newPath = '$newDir/$_kDataFileName';
       final targetFile = File(newPath);
       if (targetFile.existsSync()) {
         // Target already has a data file — adopt it as-is.
         // No write needed; the new instance will load it on next init.
+        adoptedExisting = true;
         debugPrint('[DB] Adopting existing data file at $newPath');
       } else {
         // New location — copy current data there (encrypted).
@@ -385,6 +400,7 @@ class AppDatabase {
     }
 
     resetInstance();
+    return adoptedExisting;
   }
 
   static void resetInstance() {
