@@ -4,6 +4,15 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.1.8] — 2026-06-01
+
+### Fixed
+- **Backward-compatible cross-machine sync for pre–key-file encrypted data** — when no encryption key is found for an existing `v2:` data file (e.g. the file was created before the shared-key-file feature, so its key only exists in the original machine's Keychain), the app now preserves the file and shows empty state rather than silently generating a **wrong** random key and writing it to `calendartask_key.b64`. Previously this poisoned the key file in the shared folder, preventing the original machine from ever writing the correct key and making the data permanently inaccessible on all machines.
+- **Plaintext-migration data loss** — if saving the encrypted version of a legacy plaintext file failed (e.g. an I/O error mid-write), the outer catch block previously wiped `_data = {}`, losing data that had already been decoded. The save is now isolated in its own try/catch so a failed write only skips the migration — data remains accessible in the current session.
+- **External-reload key generation** — file-watcher reloads triggered by another machine writing to the sync folder no longer generate a new random key when the file cannot be decrypted, preventing the same key-file poisoning via the watcher path.
+
+---
+
 ## [3.1.7] — 2026-05-27
 
 ### Fixed

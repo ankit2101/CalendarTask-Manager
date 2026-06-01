@@ -124,9 +124,17 @@ class AppDatabase {
   /// 3. **SharedPreferences** — fallback when the Keychain entitlement is absent
   ///    (e.g. ad-hoc signed builds).
   ///
-  /// When a key is generated for the first time it is written to whichever tier
-  /// is appropriate so subsequent launches (and the second machine) can read it.
-  static Future<enc.Key> _getEncKey({String? dataDir}) async {
+  /// [generate] controls what happens when no existing key is found:
+  ///   - `true`  (default, used by [_save]) — generates a new key, persists it,
+  ///     and writes the key file. Safe for fresh files.
+  ///   - `false` (used by [_loadData] / [_reloadExternally]) — returns `null`
+  ///     instead of generating. This prevents a wrong key from being written
+  ///     alongside an existing encrypted file whose real key hasn't synced yet
+  ///     (e.g. pre-key-file `v2:` files created before the shared-key feature).
+  ///
+  /// When an existing key IS found it is always written to the key file
+  /// opportunistically so other machines can pick it up.
+  static Future<enc.Key?> _getEncKey({String? dataDir, bool generate = true}) async {
     // Tier 1: shared key file in the sync folder.
     if (dataDir != null) {
       final keyFile = File('$dataDir/$_kKeyFileName');
@@ -148,6 +156,7 @@ class AppDatabase {
           if (dataDir != null) _writeKeyFile(dataDir, stored);
           return enc.Key.fromBase64(stored);
         }
+        if (!generate) return null;
         final key = enc.Key.fromSecureRandom(32);
         await _secureStorage.write(key: _kEncKeyName, value: key.base64);
         if (dataDir != null) _writeKeyFile(dataDir, key.base64);
@@ -165,6 +174,7 @@ class AppDatabase {
       if (dataDir != null) _writeKeyFile(dataDir, stored);
       return enc.Key.fromBase64(stored);
     }
+    if (!generate) return null;
     final key = enc.Key.fromSecureRandom(32);
     await prefs.setString(fallbackKey, key.base64);
     if (dataDir != null) _writeKeyFile(dataDir, key.base64);
@@ -226,34 +236,75 @@ class AppDatabase {
   Future<void> _loadData() async {
     final file = File(_dataFilePath);
     if (file.existsSync()) {
+      String content;
       try {
-        final content = file.readAsStringSync();
-        if (content.trimLeft().startsWith('{')) {
-          // Legacy plaintext JSON — load it and immediately re-save encrypted.
-          _data = jsonDecode(content) as Map<String, dynamic>;
-          await _save(); // migrates to encrypted format
-          return;
-        }
-        // Encrypted format — try GCM (v2:) then legacy CBC for migration.
-        final key       = await _getEncKey(dataDir: File(_dataFilePath).parent.path);
-        final decrypted = _decryptJson(content, key);
-        if (decrypted != null) {
-          _data = jsonDecode(decrypted) as Map<String, dynamic>;
-          // Legacy CBC file (no v2: prefix) — re-save with GCM immediately.
-          if (!content.startsWith(_kGcmPrefix)) await _save();
-          return;
-        }
-        // Decryption failed — file exists but key may not have synced yet.
-        // Preserve the file; use empty in-memory state so nothing is written.
-        debugPrint('[DB] Could not decrypt existing data file — preserving file, using empty state');
-        _data = {};
-        return;
+        content = file.readAsStringSync();
       } catch (e) {
-        // I/O or parse error — same policy: preserve the file, use empty state.
-        debugPrint('[DB] Error reading data file: $e — preserving file, using empty state');
+        debugPrint('[DB] Could not read data file: $e — preserving file, using empty state');
         _data = {};
         return;
       }
+
+      // ── Plaintext JSON (pre-encryption legacy file) ──────────────────────
+      if (content.trimLeft().startsWith('{')) {
+        try {
+          _data = jsonDecode(content) as Map<String, dynamic>;
+        } catch (e) {
+          debugPrint('[DB] Plaintext file is corrupt: $e — preserving file, using empty state');
+          _data = {};
+          return;
+        }
+        // Migrate to encrypted format. Isolated try so a save failure keeps
+        // the already-loaded _data intact rather than wiping it.
+        try {
+          await _save();
+        } catch (e) {
+          debugPrint('[DB] Could not encrypt legacy file on migration: $e — data is loaded in memory but file was not re-saved');
+        }
+        return;
+      }
+
+      // ── Encrypted format (GCM v2: or legacy CBC) ─────────────────────────
+      // Use generate:false so we never mint a fresh key that would mismatch
+      // an existing encrypted file whose real key hasn't synced yet. This
+      // specifically handles pre-key-file v2: files (created before the
+      // shared-key-file feature) where the key only exists in the Keychain
+      // of the original machine.
+      final dataDir = file.parent.path;
+      final key     = await _getEncKey(dataDir: dataDir, generate: false);
+      if (key == null) {
+        debugPrint('[DB] No encryption key available for existing file — '
+            'key has not synced yet. Preserving file, using empty state. '
+            'Run the app on the machine that originally created this file '
+            'so its Keychain key is written to the shared key file.');
+        _data = {};
+        return;
+      }
+      final decrypted = _decryptJson(content, key);
+      if (decrypted != null) {
+        try {
+          _data = jsonDecode(decrypted) as Map<String, dynamic>;
+        } catch (e) {
+          debugPrint('[DB] Decrypted content is corrupt JSON: $e — preserving file, using empty state');
+          _data = {};
+          return;
+        }
+        // Legacy CBC file (no v2: prefix) — re-save with GCM immediately.
+        if (!content.startsWith(_kGcmPrefix)) {
+          try {
+            await _save();
+          } catch (e) {
+            debugPrint('[DB] Could not upgrade CBC→GCM on migration: $e');
+          }
+        }
+        return;
+      }
+      // Decryption failed despite having a key — file may be corrupt or was
+      // encrypted with a different key. Preserve the file.
+      debugPrint('[DB] Decryption failed — key mismatch or corrupt file. '
+          'Preserving file, using empty state.');
+      _data = {};
+      return;
     }
     // File genuinely does not exist — migrate from SharedPreferences.
     await _migrateFromPrefs();
@@ -276,7 +327,8 @@ class AppDatabase {
 
   Future<void> _save() async {
     _writingInternally = true;
-    final key       = await _getEncKey(dataDir: File(_dataFilePath).parent.path);
+    // generate:true (default) — always produces a key, never returns null.
+    final key = (await _getEncKey(dataDir: File(_dataFilePath).parent.path, generate: true))!;
     final encrypted = _encryptJson(jsonEncode(_data), key);
     await File(_dataFilePath).writeAsString(encrypted, flush: true);
     // Allow extra time for the OS / sync daemon to process our own write
@@ -325,8 +377,19 @@ class AppDatabase {
       if (content.trimLeft().startsWith('{')) {
         jsonStr = content; // legacy plaintext (migration in progress)
       } else {
-        final key = await _getEncKey(dataDir: file.parent.path);
-        jsonStr   = _decryptJson(content, key) ?? '{}';
+        // generate:false — never mint a wrong key while reloading a file
+        // written by another machine.
+        final key = await _getEncKey(dataDir: file.parent.path, generate: false);
+        if (key == null) {
+          debugPrint('[DB] External reload: no key available yet — skipping reload');
+          return;
+        }
+        final decrypted = _decryptJson(content, key);
+        if (decrypted == null) {
+          debugPrint('[DB] External reload: decryption failed — skipping reload');
+          return;
+        }
+        jsonStr = decrypted;
       }
       _data = jsonDecode(jsonStr) as Map<String, dynamic>;
       debugPrint('[DB] Reloaded data from external change');
@@ -373,7 +436,8 @@ class AppDatabase {
         debugPrint('[DB] Adopting existing data file at $newPath');
       } else {
         // New location — copy current data there (encrypted).
-        final key       = await _getEncKey(dataDir: newDir);
+        // generate:true — always produces a key for the new directory.
+        final key       = (await _getEncKey(dataDir: newDir, generate: true))!;
         final encrypted = _encryptJson(jsonEncode(inst._data), key);
         await File(newPath).writeAsString(encrypted, flush: true);
         debugPrint('[DB] Wrote data to new location $newPath');
