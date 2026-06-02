@@ -14,5 +14,10 @@
 	<array>
 		<string>$(AppIdentifierPrefix)$(CFBundleIdentifier)</string>
 	</array>
+	<!-- Allow sending Apple Events to Outlook for Mac (calendar fallback) -->
+	<key>com.apple.security.temporary-exception.apple-events</key>
+	<array>
+		<string>com.microsoft.Outlook</string>
+	</array>
 </dict>
 </plist>

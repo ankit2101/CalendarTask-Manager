@@ -7,15 +7,17 @@ class ClaudeModel {
 }
 
 const kClaudeModels = [
-  ClaudeModel(id: 'claude-opus-4-7',             label: 'Claude Opus 4.7',       tier: 'Opus'),
-  ClaudeModel(id: 'claude-opus-4-5-20251101',    label: 'Claude Opus 4.5',       tier: 'Opus'),
+  // Latest
+  ClaudeModel(id: 'claude-opus-4-8',             label: 'Claude Opus 4.8',       tier: 'Opus'),
   ClaudeModel(id: 'claude-sonnet-4-6',           label: 'Claude Sonnet 4.6',     tier: 'Sonnet'),
-  ClaudeModel(id: 'claude-sonnet-4-5-20251115',  label: 'Claude Sonnet 4.5',     tier: 'Sonnet'),
-  ClaudeModel(id: 'claude-sonnet-4-20250514',    label: 'Claude Sonnet 4',       tier: 'Sonnet'),
   ClaudeModel(id: 'claude-haiku-4-5-20251001',   label: 'Claude Haiku 4.5',      tier: 'Haiku'),
+  // Legacy
+  ClaudeModel(id: 'claude-opus-4-7',             label: 'Claude Opus 4.7',       tier: 'Opus'),
+  ClaudeModel(id: 'claude-opus-4-6',             label: 'Claude Opus 4.6',       tier: 'Opus'),
+  ClaudeModel(id: 'claude-sonnet-4-5-20250929',  label: 'Claude Sonnet 4.5',     tier: 'Sonnet'),
 ];
 
-const kDefaultClaudeModelId = 'claude-sonnet-4-20250514';
+const kDefaultClaudeModelId = 'claude-sonnet-4-6';
 
 class AppSettings {
   final int pollingIntervalSeconds;
