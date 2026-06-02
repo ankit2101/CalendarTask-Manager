@@ -50,6 +50,7 @@ Grab the latest release from [**Releases**](https://github.com/ankit2101/Calenda
 - **Per-calendar colour** — pick a colour for each feed; events inherit it on the day view
 - **Inline rename** — edit a calendar account's display name directly in the Accounts tab
 - **Auto-refresh** every 10 minutes — no manual action needed
+- **Outlook for Mac fallback** — on corporate laptops where a security agent (e.g. Microsoft Defender for Endpoint) blocks anonymous ICS requests, the app automatically reads events from the locally installed Outlook app instead; no configuration needed
 - **Dismiss** past meeting reminders with the × button
 - **Dual timezone display** — event cards show the original source timezone (e.g. "8:30 AM – 9:00 AM MST") alongside your local time (e.g. "9:30 PM IST"), so you always know when a meeting was scheduled in its home timezone
 - **Edit meeting time** — tap the ✏️ pencil icon on any event to correct the start/end time if it was captured in the wrong timezone; an **edited** badge marks overridden events and a reset button restores the original
@@ -142,6 +143,8 @@ All calendars are connected via a private ICS URL — no OAuth or third-party si
 5. Copy the **ICS** link
 6. In the app → **Accounts** → paste the URL → **Add**
 
+> **On corporate laptops (Defender for Endpoint / Zscaler / etc.):** Enterprise security agents route all traffic through a proxy, which causes Exchange Online to reject anonymous ICS requests with HTTP 400 — even with a freshly generated URL. The app detects this automatically and falls back to reading events from the **locally installed Outlook for Mac app** via AppleScript. macOS will show a one-time permission prompt — click **OK** — and your calendar will load normally from then on. The ICS URL should still be added in Accounts; the fallback activates only when the feed fails.
+
 ### iCloud Calendar
 
 1. Open the **Calendar** app on Mac
@@ -189,6 +192,7 @@ Both files must be present in the same folder on every machine. Once the key fil
 | Credential storage | OS Keychain (macOS) / Credential Manager (Windows) via flutter_secure_storage |
 | AI | Anthropic Claude API |
 | ICS parsing | Custom RFC 5545 parser with full TZID, RRULE, EXDATE support |
+| Outlook fallback | NSAppleScript via Flutter method channel (`OutlookBridge.swift`) |
 | Timezones | IANA tz database (`timezone` package) + Windows↔IANA map |
 | HTTP | Dio (with timeouts + response size cap) |
 | Encryption | `encrypt` package — AES-256-GCM |
@@ -215,8 +219,9 @@ lib/
 │   ├── ai/claude_client.dart       # Anthropic API client (timeouts, email scrub)
 │   ├── auth/token_store.dart       # Secure credential storage (Keychain + fallback)
 │   ├── calendar/
-│   │   ├── calendar_manager.dart   # Aggregates ICS feeds + deduplication
-│   │   └── ics_calendar_service.dart  # RFC 5545 parser (TZID, RRULE, EXDATE)
+│   │   ├── calendar_manager.dart   # Aggregates ICS feeds + Outlook fallback + deduplication
+│   │   ├── ics_calendar_service.dart  # RFC 5545 parser (TZID, RRULE, EXDATE)
+│   │   └── outlook_calendar_service.dart  # Outlook for Mac fallback via method channel
 │   ├── meeting_poller.dart         # Live meeting detection
 │   └── storage/app_database.dart   # AES-256-GCM encrypted local JSON store + key file
 ├── widgets/
@@ -227,6 +232,9 @@ lib/
 │   ├── constants.dart              # App-wide constants (sync interval, leave keywords)
 │   ├── time_utils.dart             # Timezone helpers + Windows↔IANA map
 │   └── theme/                      # Catppuccin Mocha theme
+macos/Runner/
+├── OutlookBridge.swift             # NSAppleScript method channel (Outlook fallback)
+└── MainFlutterWindow.swift         # Registers OutlookBridge on startup
 tools/
 ├── recover_data.dart               # CLI tool to decrypt and inspect the data file
 └── reencrypt_data.dart             # CLI tool to re-encrypt the data file with a new key
