@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import '../../models/calendar_event.dart';
+import '../../models/settings.dart';
 
 class ClaudeClient {
   final Dio _dio = Dio(BaseOptions(
@@ -14,7 +15,7 @@ class ClaudeClient {
   ));
 
   String? _apiKey;
-  String _modelId = 'claude-sonnet-4-20250514';
+  String _modelId = kDefaultClaudeModelId;
 
   void setApiKey(String key) {
     _apiKey = key;

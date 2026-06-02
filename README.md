@@ -47,7 +47,9 @@ Grab the latest release from [**Releases**](https://github.com/ankit2101/Calenda
 - Live **IN PROGRESS** badge on meetings happening right now
 - Leave/OOO events (PTO, vacation, out of office) are automatically hidden
 - Private appointments shown with a 🔒 lock icon
-- **Auto-refresh** every 15 minutes — no manual action needed
+- **Per-calendar colour** — pick a colour for each feed; events inherit it on the day view
+- **Inline rename** — edit a calendar account's display name directly in the Accounts tab
+- **Auto-refresh** every 10 minutes — no manual action needed
 - **Dismiss** past meeting reminders with the × button
 - **Dual timezone display** — event cards show the original source timezone (e.g. "8:30 AM – 9:00 AM MST") alongside your local time (e.g. "9:30 PM IST"), so you always know when a meeting was scheduled in its home timezone
 - **Edit meeting time** — tap the ✏️ pencil icon on any event to correct the start/end time if it was captured in the wrong timezone; an **edited** badge marks overridden events and a reset button restores the original
@@ -64,7 +66,8 @@ Grab the latest release from [**Releases**](https://github.com/ankit2101/Calenda
 
 ### ✅ To-Do Board
 
-- Three states: **To-Do → In Progress → Completed**
+- Four states: **To-Do → In Progress → On Hold → Done**
+- **On Hold** tasks accept an optional **resume date** — they automatically return to To-Do when the date arrives
 - Edit task title, description, priority, and **due date** inline
 - New tasks default to a due date **2 days from creation**
 - Due dates are colour-coded: orange when due today, red when overdue
@@ -74,11 +77,12 @@ Grab the latest release from [**Releases**](https://github.com/ankit2101/Calenda
 ### 🤖 Claude AI
 
 - Choose your Claude model in **Settings**:
-  - `claude-opus-4-20250514`
-  - `claude-sonnet-4-20250514`
-  - `claude-3-5-sonnet-20241022`
-  - `claude-3-5-haiku-20241022`
-  - `claude-3-haiku-20240307`
+  - `claude-opus-4-8` (Claude Opus 4.8 — most capable)
+  - `claude-sonnet-4-6` (Claude Sonnet 4.6 — **default**)
+  - `claude-haiku-4-5-20251001` (Claude Haiku 4.5 — fastest)
+  - `claude-opus-4-7` (Claude Opus 4.7 — legacy)
+  - `claude-opus-4-6` (Claude Opus 4.6 — legacy)
+  - `claude-sonnet-4-5-20250929` (Claude Sonnet 4.5 — legacy)
 - Model change takes effect immediately — no restart needed
 - Attendee email addresses are stripped from prompts before sending to the API
 
@@ -155,13 +159,21 @@ All data is stored locally in a single encrypted file (`calendartask_data.json`)
 | macOS | `~/Library/Application Support/com.caltask.calendar_task_manager/` |
 | Windows | `%APPDATA%\com.caltask.calendar_task_manager\` |
 
-**Cloud sync:** Move the file to any folder (OneDrive, iCloud Drive, Dropbox) via **Settings → Change Data Location**. On macOS, a security-scoped bookmark is saved so the sandbox can re-open the file on every future launch without prompting.
+**Cloud sync:** Move the data folder to OneDrive, iCloud Drive, or Dropbox via **Settings → Change Data Location**. On macOS, a security-scoped bookmark is saved so the sandbox can re-open the folder on every future launch without prompting.
 
-**Encryption:** The file is encrypted with AES-256-GCM. The encryption key is stored in the OS keychain and never touches disk in plaintext.
+Two files live in the folder:
+- `calendartask_data.json` — your encrypted data
+- `calendartask_key.b64` — the shared encryption key (written automatically when you set a sync folder)
+
+Both files must be present in the same folder on every machine. Once the key file syncs, any machine that opens the app from that folder can read the data.
+
+**Encryption:** The data file is encrypted with AES-256-GCM. In a local-only setup the key lives in the OS keychain; in a shared sync folder it is stored in `calendartask_key.b64` alongside the data file.
 
 **API keys:** Stored exclusively in the OS keychain — not in the data file, not in SharedPreferences.
 
 **No cloud:** No data is sent to any external server except the Claude API when extracting action items (and only after you approve the one-time consent dialog).
+
+**Recovery tools:** If you ever need to recover or re-encrypt data manually, see the scripts in the [`tools/`](tools/) directory (`recover_data.dart`, `reencrypt_data.dart`).
 
 ---
 
@@ -193,10 +205,10 @@ lib/
 ├── models/                         # Data models (account, event, task, settings)
 ├── pages/
 │   ├── dashboard_page.dart         # Daily calendar view with dual-timezone cards
-│   ├── todos_page.dart             # To-do board (To-Do / In Progress / Done)
+│   ├── todos_page.dart             # To-do board (To-Do / In Progress / On Hold / Done)
 │   ├── notes_page.dart             # Saved meeting notes + edit
-│   ├── accounts_page.dart          # Calendar account management + SSRF guard
-│   └── settings_page.dart          # API key + model selector
+│   ├── accounts_page.dart          # Calendar account management + colour picker + SSRF guard
+│   └── settings_page.dart          # API key + model selector + sync folder
 ├── providers/
 │   └── app_providers.dart          # Riverpod providers
 ├── services/
@@ -206,15 +218,18 @@ lib/
 │   │   ├── calendar_manager.dart   # Aggregates ICS feeds + deduplication
 │   │   └── ics_calendar_service.dart  # RFC 5545 parser (TZID, RRULE, EXDATE)
 │   ├── meeting_poller.dart         # Live meeting detection
-│   └── storage/app_database.dart   # AES-256-GCM encrypted local JSON store
+│   └── storage/app_database.dart   # AES-256-GCM encrypted local JSON store + key file
 ├── widgets/
 │   ├── app_scaffold.dart           # Sidebar + navigation
 │   ├── quick_note_dialog.dart      # Meeting note capture + AI consent dialog
 │   └── timezone_picker_dialog.dart # Meeting time correction dialog
-└── core/
-    ├── constants.dart              # Claude model list
-    ├── time_utils.dart             # Timezone helpers + Windows↔IANA map
-    └── theme/                      # Catppuccin Mocha theme
+├── core/
+│   ├── constants.dart              # App-wide constants (sync interval, leave keywords)
+│   ├── time_utils.dart             # Timezone helpers + Windows↔IANA map
+│   └── theme/                      # Catppuccin Mocha theme
+tools/
+├── recover_data.dart               # CLI tool to decrypt and inspect the data file
+└── reencrypt_data.dart             # CLI tool to re-encrypt the data file with a new key
 ```
 
 ---

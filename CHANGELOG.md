@@ -4,6 +4,25 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.2.0] — 2026-06-02
+
+### Added
+- **Outlook for Mac fallback** — when an Outlook ICS feed returns an auth error (HTTP 400/401/403), the app now automatically reads events from the locally installed Microsoft Outlook app via AppleScript. This fixes calendars that silently stop loading on corporate laptops where Microsoft Defender for Endpoint routes all traffic through Azure, causing Exchange Online to reject anonymous ICS requests. On first use, macOS will ask permission to control Outlook — click OK.
+- **Claude model list updated to current Anthropic lineup** — replaced the old model IDs with the current generation:
+  - Claude Opus 4.8 (newest, most capable)
+  - Claude Sonnet 4.6 (default)
+  - Claude Haiku 4.5 (fastest)
+  - Claude Opus 4.7, 4.6, Sonnet 4.5 (legacy, still available)
+  - Removed deprecated Claude Sonnet 4 (`claude-sonnet-4-20250514`, retiring June 2026) and the wrong Sonnet 4.5 date (`20251115` → corrected to `20250929`)
+- **Default model changed** from deprecated Claude Sonnet 4 to Claude Sonnet 4.6
+
+### Changed
+- Per-calendar colour picker and inline account rename are now documented in the README
+- Auto-refresh interval corrected in README (10 min, not 15)
+- README sync section now explains the two-file setup (`calendartask_data.json` + `calendartask_key.b64`) required for cross-machine sync
+
+---
+
 ## [3.1.8] — 2026-06-01
 
 ### Fixed

@@ -28,5 +28,7 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>CalendarTask Manager reads your Outlook calendar to show meetings when your work calendar feed is unavailable.</string>
 </dict>
 </plist>
