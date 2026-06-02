@@ -1,12 +1,27 @@
 # CalendarTask Manager
 
-A cross-platform desktop app built with Flutter that connects your calendars via ICS/Webcal feeds, captures meeting notes with AI-extracted action items, and keeps your to-do list in one place. Available on **macOS** and **Windows**.
+> A Flutter desktop app that unifies your calendars, captures meeting notes, and turns action items into tasks — with Claude AI built in.
+
+**Platform:** macOS · Windows &nbsp;|&nbsp; **Version:** 3.2.0 &nbsp;|&nbsp; **License:** MIT
+
+[![Release](https://img.shields.io/github/v/release/ankit2101/CalendarTask-Manager)](https://github.com/ankit2101/CalendarTask-Manager/releases)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-blue)](https://github.com/ankit2101/CalendarTask-Manager/releases)
+[![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter)](https://flutter.dev)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+---
+
+## What is this?
+
+CalendarTask Manager is a **native desktop app** for macOS and Windows that connects your calendars via ICS/Webcal feeds, lets you take meeting notes with AI-extracted action items powered by the **Anthropic Claude API**, and manages your to-do list — all in one place, with all data stored **locally and encrypted**.
+
+**No subscription. No cloud sync required. No OAuth logins.** Just paste an ICS URL and go.
 
 ---
 
 ## Download
 
-Grab the latest release from [**Releases**](https://github.com/ankit2101/CalendarTask-Manager/releases).
+Grab the latest release from [**Releases →**](https://github.com/ankit2101/CalendarTask-Manager/releases)
 
 ### macOS Installation
 
@@ -41,7 +56,7 @@ Grab the latest release from [**Releases**](https://github.com/ankit2101/Calenda
 
 ### 📅 Calendar
 
-- Connect any calendar via **ICS / Webcal feeds** (Google, Outlook, iCloud, and more)
+- Connect any calendar via **ICS / Webcal feeds** — works with Google Calendar, Microsoft Outlook, iCloud, Fastmail, Proton Calendar, and any RFC 5545-compliant feed
 - View events across all feeds in a single **daily view**
 - Navigate forward and backward through dates
 - Live **IN PROGRESS** badge on meetings happening right now
@@ -50,10 +65,10 @@ Grab the latest release from [**Releases**](https://github.com/ankit2101/Calenda
 - **Per-calendar colour** — pick a colour for each feed; events inherit it on the day view
 - **Inline rename** — edit a calendar account's display name directly in the Accounts tab
 - **Auto-refresh** every 10 minutes — no manual action needed
-- **Outlook for Mac fallback** — on corporate laptops where a security agent (e.g. Microsoft Defender for Endpoint) blocks anonymous ICS requests, the app automatically reads events from the locally installed Outlook app instead; no configuration needed
-- **Dismiss** past meeting reminders with the × button
-- **Dual timezone display** — event cards show the original source timezone (e.g. "8:30 AM – 9:00 AM MST") alongside your local time (e.g. "9:30 PM IST"), so you always know when a meeting was scheduled in its home timezone
+- **Dual timezone display** — event cards show the original source timezone (e.g. "8:30 AM – 9:00 AM MST") alongside your local time (e.g. "9:30 PM IST")
 - **Edit meeting time** — tap the ✏️ pencil icon on any event to correct the start/end time if it was captured in the wrong timezone; an **edited** badge marks overridden events and a reset button restores the original
+- **Outlook for Mac fallback** — on corporate laptops where a security agent (e.g. Microsoft Defender for Endpoint, Zscaler) blocks anonymous ICS requests, the app automatically reads events from the locally installed Outlook app instead via AppleScript; no configuration needed
+- **Dismiss** past meeting reminders with the × button
 
 ### ✏️ Meeting Notes
 
@@ -75,17 +90,24 @@ Grab the latest release from [**Releases**](https://github.com/ankit2101/Calenda
 - Each task card shows the **source meeting name** and **created date**
 - Action items from meeting notes land here automatically
 
-### 🤖 Claude AI
+### 🤖 Claude AI Integration
 
-- Choose your Claude model in **Settings**:
-  - `claude-opus-4-8` (Claude Opus 4.8 — most capable)
-  - `claude-sonnet-4-6` (Claude Sonnet 4.6 — **default**)
-  - `claude-haiku-4-5-20251001` (Claude Haiku 4.5 — fastest)
-  - `claude-opus-4-7` (Claude Opus 4.7 — legacy)
-  - `claude-opus-4-6` (Claude Opus 4.6 — legacy)
-  - `claude-sonnet-4-5-20250929` (Claude Sonnet 4.5 — legacy)
+Uses the [Anthropic Claude API](https://console.anthropic.com/) to extract action items from meeting notes.
+
+Choose your Claude model in **Settings**:
+
+| Model | ID | Notes |
+|---|---|---|
+| Claude Opus 4.8 | `claude-opus-4-8` | Most capable |
+| Claude Sonnet 4.6 | `claude-sonnet-4-6` | **Default** |
+| Claude Haiku 4.5 | `claude-haiku-4-5-20251001` | Fastest |
+| Claude Opus 4.7 | `claude-opus-4-7` | Legacy |
+| Claude Opus 4.6 | `claude-opus-4-6` | Legacy |
+| Claude Sonnet 4.5 | `claude-sonnet-4-5-20250929` | Legacy |
+
 - Model change takes effect immediately — no restart needed
 - Attendee email addresses are stripped from prompts before sending to the API
+- A Claude API key is **optional** — all calendar and task features work without one
 
 ### 🔒 Security & Privacy
 
@@ -94,6 +116,7 @@ Grab the latest release from [**Releases**](https://github.com/ankit2101/Calenda
 - **SSRF protection** — calendar URLs are validated to block private-network addresses (localhost, RFC 1918 ranges, link-local)
 - **Request limits** — ICS feeds are capped at 10 MB; HTTP connections time out at 10 s; recurring event expansion is capped to prevent CPU abuse
 - **AI consent** — a one-time dialog informs you before any meeting content is sent to Claude
+- **No telemetry** — no analytics, no crash reporting, no data leaves the device except Claude API calls you explicitly trigger
 
 ---
 
@@ -153,7 +176,7 @@ All calendars are connected via a private ICS URL — no OAuth or third-party si
 
 ---
 
-## Data Storage
+## Data Storage & Sync
 
 All data is stored locally in a single encrypted file (`calendartask_data.json`). Default locations:
 
@@ -190,7 +213,7 @@ Both files must be present in the same folder on every machine. Once the key fil
 | Navigation | go_router |
 | Data persistence | AES-256-GCM encrypted JSON file |
 | Credential storage | OS Keychain (macOS) / Credential Manager (Windows) via flutter_secure_storage |
-| AI | Anthropic Claude API |
+| AI | Anthropic Claude API (Opus 4.8 / Sonnet 4.6 / Haiku 4.5) |
 | ICS parsing | Custom RFC 5545 parser with full TZID, RRULE, EXDATE support |
 | Outlook fallback | NSAppleScript via Flutter method channel (`OutlookBridge.swift`) |
 | Timezones | IANA tz database (`timezone` package) + Windows↔IANA map |
@@ -247,6 +270,17 @@ tools/
 See the `docs/` directory for build and development instructions:
 
 - [Flutter App Setup & Build](docs/FLUTTER_APP_SETUP.md)
+
+---
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the full version history.
+
+**Latest (v3.2.0):**
+- Outlook for Mac fallback — automatic ICS→AppleScript failover on corporate laptops with Defender/Zscaler
+- Claude model list updated to current Anthropic lineup (Opus 4.8, Sonnet 4.6, Haiku 4.5)
+- Default model changed to Claude Sonnet 4.6
 
 ---
 
