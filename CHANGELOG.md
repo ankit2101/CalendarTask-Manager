@@ -4,6 +4,16 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.3.2] — 2026-06-03
+
+### Fixed
+- **Blend (Outlook/Office365) calendar not loading after upgrade** — the Outlook-app fallback silently failed on production builds because macOS TCC (Automation permission) was never granted for the installed app. The app now proactively requests the "Allow CalendarTask Manager to control Microsoft Outlook?" permission:
+  - **Existing users**: the TCC prompt fires automatically on the first refresh after upgrading, when the fallback is attempted and returns an auth error.
+  - **New users adding an Outlook URL**: the prompt fires immediately while they are still on the Accounts page.
+  - If permission is denied, a warning banner with a "Re-check permission" button appears on the Accounts page with instructions to enable it in System Settings → Privacy & Security → Automation.
+
+---
+
 ## [3.3.1] — 2026-06-03
 
 ### Fixed
