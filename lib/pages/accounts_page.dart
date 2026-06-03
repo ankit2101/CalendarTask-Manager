@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../core/theme/catppuccin_mocha.dart';
@@ -16,28 +17,10 @@ class AccountsPage extends ConsumerStatefulWidget {
 class _AccountsPageState extends ConsumerState<AccountsPage> {
   final _icsUrlController = TextEditingController();
   final _icsNameController = TextEditingController();
-  // null = unknown, true = granted, false = denied
+  // Shared instance so the _installed cache is reused across all calls on this page.
+  final _outlookSvc = OutlookCalendarService();
+  // null = not yet checked, true = granted, false = denied
   bool? _outlookPermission;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkOutlookPermission();
-  }
-
-  /// Silently probe the current Automation permission state without triggering
-  /// a prompt — used to decide whether to show the warning banner on page load.
-  Future<void> _checkOutlookPermission() async {
-    final svc = OutlookCalendarService();
-    if (!await svc.isAvailable()) return; // Outlook not installed; no banner needed
-    // A permission probe always triggers the TCC prompt if not yet decided;
-    // on page load we want to know the *current* state without nagging, so we
-    // only call it if we've never checked before (state is null).
-    if (_outlookPermission == null) {
-      final granted = await svc.requestAutomationPermission();
-      if (mounted) setState(() => _outlookPermission = granted);
-    }
-  }
 
   @override
   void dispose() {
@@ -118,9 +101,8 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     // shows the TCC prompt now (while the user is in the Accounts page) rather
     // than silently failing the first time the fallback is needed.
     if (url.contains('outlook.office365.com') || url.contains('outlook.office.com')) {
-      final svc = OutlookCalendarService();
-      if (await svc.isAvailable()) {
-        final granted = await svc.requestAutomationPermission();
+      if (await _outlookSvc.isAvailable()) {
+        final granted = await _outlookSvc.requestAutomationPermission();
         if (mounted) setState(() => _outlookPermission = granted);
         if (!granted && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -201,9 +183,14 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
                         const SizedBox(height: 8),
                         TextButton.icon(
                           onPressed: () async {
-                            final svc = OutlookCalendarService();
-                            final granted = await svc.requestAutomationPermission();
-                            if (mounted) setState(() => _outlookPermission = granted);
+                            try {
+                              final granted = await _outlookSvc.requestAutomationPermission();
+                              if (mounted) setState(() => _outlookPermission = granted);
+                            } on PlatformException {
+                              // NOT_INSTALLED — Outlook was removed after page load;
+                              // hide the banner since the fallback is no longer relevant.
+                              if (mounted) setState(() => _outlookPermission = null);
+                            }
                           },
                           icon: const Icon(Icons.refresh, size: 14),
                           label: const Text('Re-check permission',
