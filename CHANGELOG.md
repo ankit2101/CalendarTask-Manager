@@ -4,6 +4,13 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.3.3] — 2026-06-03
+
+### Fixed
+- **Outlook fallback finally works in released builds** — the CI ad-hoc signing step was re-signing the app with `codesign --sign -` **without** passing `--entitlements`, which stripped the entire entitlements blob (app sandbox + the Apple Events exception for Outlook) from the shipped DMG. As a result macOS silently denied Apple Events to Outlook and never showed the permission prompt, so the v3.3.1/v3.3.2 fixes could not take effect in production. CI now signs with a dedicated `AdhocRelease.entitlements` file (Release entitlements minus `keychain-access-groups`, which requires a Team ID unavailable under ad-hoc signing), preserving the sandbox and Apple Events exception in the released app.
+
+---
+
 ## [3.3.2] — 2026-06-03
 
 ### Fixed
