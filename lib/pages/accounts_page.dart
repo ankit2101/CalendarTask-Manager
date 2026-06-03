@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../core/theme/catppuccin_mocha.dart';
 import '../models/account.dart';
 import '../providers/app_providers.dart';
+import '../services/calendar/outlook_calendar_service.dart';
 
 class AccountsPage extends ConsumerStatefulWidget {
   const AccountsPage({super.key});
@@ -15,6 +16,28 @@ class AccountsPage extends ConsumerStatefulWidget {
 class _AccountsPageState extends ConsumerState<AccountsPage> {
   final _icsUrlController = TextEditingController();
   final _icsNameController = TextEditingController();
+  // null = unknown, true = granted, false = denied
+  bool? _outlookPermission;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkOutlookPermission();
+  }
+
+  /// Silently probe the current Automation permission state without triggering
+  /// a prompt — used to decide whether to show the warning banner on page load.
+  Future<void> _checkOutlookPermission() async {
+    final svc = OutlookCalendarService();
+    if (!await svc.isAvailable()) return; // Outlook not installed; no banner needed
+    // A permission probe always triggers the TCC prompt if not yet decided;
+    // on page load we want to know the *current* state without nagging, so we
+    // only call it if we've never checked before (state is null).
+    if (_outlookPermission == null) {
+      final granted = await svc.requestAutomationPermission();
+      if (mounted) setState(() => _outlookPermission = granted);
+    }
+  }
 
   @override
   void dispose() {
@@ -48,7 +71,7 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     return false;
   }
 
-  void _addIcsAccount() {
+  Future<void> _addIcsAccount() async {
     final url = _icsUrlController.text.trim();
     final name = _icsNameController.text.trim();
     if (url.isEmpty) return;
@@ -91,6 +114,30 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
     _icsUrlController.clear();
     _icsNameController.clear();
 
+    // For Outlook feeds, request Automation permission immediately so macOS
+    // shows the TCC prompt now (while the user is in the Accounts page) rather
+    // than silently failing the first time the fallback is needed.
+    if (url.contains('outlook.office365.com') || url.contains('outlook.office.com')) {
+      final svc = OutlookCalendarService();
+      if (await svc.isAvailable()) {
+        final granted = await svc.requestAutomationPermission();
+        if (mounted) setState(() => _outlookPermission = granted);
+        if (!granted && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Outlook permission denied. If this feed fails to load, '
+                'go to System Settings → Privacy & Security → Automation and '
+                'enable Microsoft Outlook for this app.',
+              ),
+              backgroundColor: CatppuccinMocha.red.withValues(alpha: 0.9),
+              duration: const Duration(seconds: 8),
+            ),
+          );
+        }
+      }
+    }
+
     ref.read(eventsProvider.notifier).refresh();
   }
 
@@ -98,6 +145,9 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
   Widget build(BuildContext context) {
     final accounts = ref.watch(accountsProvider);
     final ics = accounts.where((a) => a.provider == 'ics').toList();
+    final hasOutlookAccount = ics.any((a) =>
+        (a.icsUrl ?? '').contains('outlook.office365.com') ||
+        (a.icsUrl ?? '').contains('outlook.office.com'));
 
     return Padding(
       padding: const EdgeInsets.all(20),
@@ -109,6 +159,69 @@ class _AccountsPageState extends ConsumerState<AccountsPage> {
                   fontWeight: FontWeight.w700,
                   color: CatppuccinMocha.text)),
           const SizedBox(height: 20),
+
+          // Warning banner: Outlook account exists but Automation permission denied
+          if (hasOutlookAccount && _outlookPermission == false)
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: CatppuccinMocha.red.withValues(alpha: 0.12),
+                border: Border.all(color: CatppuccinMocha.red.withValues(alpha: 0.6)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.warning_amber_rounded,
+                      color: CatppuccinMocha.red, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Outlook access not authorised',
+                          style: TextStyle(
+                              color: CatppuccinMocha.red,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'This app needs permission to read events from '
+                          'Microsoft Outlook as a fallback when your Outlook '
+                          'ICS feed is blocked on the corporate network.\n\n'
+                          'Go to System Settings → Privacy & Security → '
+                          'Automation and enable Microsoft Outlook for '
+                          'CalendarTask Manager.',
+                          style: TextStyle(
+                              color: CatppuccinMocha.subtext0, fontSize: 12),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: () async {
+                            final svc = OutlookCalendarService();
+                            final granted = await svc.requestAutomationPermission();
+                            if (mounted) setState(() => _outlookPermission = granted);
+                          },
+                          icon: const Icon(Icons.refresh, size: 14),
+                          label: const Text('Re-check permission',
+                              style: TextStyle(fontSize: 12)),
+                          style: TextButton.styleFrom(
+                            foregroundColor: CatppuccinMocha.red,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           _SectionHeader(
               title: 'ICS / Webcal',

@@ -11,20 +11,42 @@ import '../../models/calendar_event.dart';
 class OutlookCalendarService {
   static const _channel = MethodChannel('com.caltask/outlook');
 
-  bool? _available; // cached so we don't hammer the channel on every refresh
+  bool? _installed; // cached — installation doesn't change at runtime
 
-  /// Returns true if Microsoft Outlook is installed and the Apple Events
-  /// bridge is functional. Result is cached after the first call.
+  /// Returns true if Microsoft Outlook is installed (does NOT check Automation
+  /// permission — use [requestAutomationPermission] for that).
   Future<bool> isAvailable() async {
-    _available ??= await _checkAvailable();
-    return _available!;
+    _installed ??= await _checkInstalled();
+    return _installed!;
   }
 
-  Future<bool> _checkAvailable() async {
+  Future<bool> _checkInstalled() async {
     try {
       return await _channel.invokeMethod<bool>('isAvailable') ?? false;
     } catch (e) {
       debugPrint('[OutlookCalendarService] isAvailable check failed: $e');
+      return false;
+    }
+  }
+
+  /// Fires a minimal Apple Events probe against Outlook, triggering the macOS
+  /// TCC "Allow … to control Microsoft Outlook?" prompt on first call.
+  ///
+  /// Returns `true` if Automation is authorized, `false` if denied/cancelled,
+  /// and throws a [PlatformException] with code `NOT_INSTALLED` if Outlook
+  /// is not installed.
+  ///
+  /// Safe to call multiple times — after authorization is granted it returns
+  /// immediately.
+  Future<bool> requestAutomationPermission() async {
+    try {
+      return await _channel.invokeMethod<bool>('requestAutomationPermission') ?? false;
+    } on PlatformException catch (e) {
+      if (e.code == 'NOT_INSTALLED') rethrow;
+      debugPrint('[OutlookCalendarService] permission probe failed: $e');
+      return false;
+    } catch (e) {
+      debugPrint('[OutlookCalendarService] permission probe failed: $e');
       return false;
     }
   }
