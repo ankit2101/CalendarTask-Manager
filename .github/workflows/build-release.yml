@@ -113,14 +113,18 @@ jobs:
       - name: Remove quarantine & ad-hoc sign
         run: |
           APP="build/macos/Build/Products/Release/calendar_task_manager.app"
+          ENTITLEMENTS="macos/Runner/AdhocRelease.entitlements"
           # Strip any quarantine attributes baked in during the build
           xattr -cr "$APP"
-          # Ad-hoc sign every binary/framework inside the bundle so macOS
-          # accepts the app without an Apple Developer certificate.
-          # Sign nested frameworks and dylibs first, then the main bundle.
+          # Ad-hoc sign every binary/framework inside the bundle first, then
+          # re-sign the main bundle with the AdhocRelease entitlements.
+          # Using --entitlements preserves the sandbox + Apple Events exception
+          # that the Outlook calendar fallback depends on. keychain-access-groups
+          # is intentionally omitted from AdhocRelease.entitlements because it
+          # requires a real Team ID prefix that is unavailable under ad-hoc signing.
           find "$APP/Contents/Frameworks" -name "*.dylib" -o -name "*.framework" 2>/dev/null | \
             sort -r | xargs -I{} codesign --force --deep --sign - {} 2>/dev/null || true
-          codesign --force --deep --sign - "$APP"
+          codesign --force --sign - --entitlements "$ENTITLEMENTS" "$APP"
 
       - name: Create install helper script
         run: |
