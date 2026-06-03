@@ -67,12 +67,17 @@ class EventsNotifier extends StateNotifier<AsyncValue<List<NormalizedEvent>>> {
   }
 
   Future<void> refresh() async {
-    state = const AsyncValue.loading();
+    // Only show the loading spinner on the first load. On a manual/auto refresh
+    // when we already have events, keep them on screen so a slow feed (Blend's
+    // ~2 MB Exchange Online feed can take tens of seconds) doesn't blank the UI.
+    if (!state.hasValue) state = const AsyncValue.loading();
     try {
       final events = await CalendarManager.getInstance().fetchAllEvents();
       state = AsyncValue.data(events);
     } catch (e, st) {
-      state = AsyncValue.error(e, st);
+      // Surface the error only when we have nothing to show; otherwise retain
+      // the existing events (CalendarManager also retains last-good per account).
+      if (!state.hasValue) state = AsyncValue.error(e, st);
     }
   }
 }

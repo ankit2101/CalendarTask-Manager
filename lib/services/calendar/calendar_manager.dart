@@ -13,6 +13,11 @@ class CalendarManager {
   final OutlookCalendarService _outlookService = OutlookCalendarService();
   List<NormalizedEvent> _cachedEvents = [];
 
+  /// Last successful fetch per account. When a refresh fails transiently (e.g.
+  /// Exchange Online throttles the feed with HTTP 429), we re-use these so the
+  /// calendar doesn't blank out the account's events on a failed refresh.
+  final Map<String, List<NormalizedEvent>> _lastGoodByAccount = {};
+
   CalendarManager._();
 
   static CalendarManager getInstance() {
@@ -31,20 +36,36 @@ class CalendarManager {
       if (account.provider != 'ics' || account.icsUrl == null) continue;
       try {
         final events = await _icsService.fetchEvents(account.id, account.icsUrl!);
+        _lastGoodByAccount[account.id] = events; // remember for failure recovery
         allEvents.addAll(events);
       } catch (e) {
         debugPrint('[CalendarManager] Failed to fetch for account ${account.id}: $e');
-        // If this is an Outlook-hosted feed that returned an auth-style error
+
+        List<NormalizedEvent>? recovered;
+
+        // If this is an Outlook-hosted feed that failed with an auth-style error
         // (common when a corporate Defender network extension routes traffic
-        // through Azure and Exchange Online rejects the anonymous request),
-        // fall back to reading the same calendar from the local Outlook app.
-        if (_isOutlookUrl(account.icsUrl!) && _isAuthError(e)) {
-          debugPrint('[CalendarManager] Auth error on Outlook ICS — trying local Outlook fallback');
+        // through Azure and Exchange Online rejects the anonymous request) OR a
+        // throttle/transient error (Exchange Online rate-limits published .ics
+        // URLs with HTTP 429), fall back to the local Outlook app.
+        if (_isOutlookUrl(account.icsUrl!) && _shouldTryOutlookFallback(e)) {
+          debugPrint('[CalendarManager] Outlook ICS failed — trying local Outlook fallback');
           final fallback = await _outlookService.fetchEvents(account.id);
           if (fallback.isNotEmpty) {
             debugPrint('[CalendarManager] Outlook fallback: ${fallback.length} events added');
-            allEvents.addAll(fallback);
+            recovered = fallback;
           }
+        }
+
+        // If the fallback didn't yield anything, retain the last successful
+        // fetch so a transient failure doesn't wipe the account from the UI.
+        recovered ??= _lastGoodByAccount[account.id];
+        if (recovered != null && recovered.isNotEmpty) {
+          debugPrint(
+            '[CalendarManager] Retaining ${recovered.length} previously-fetched '
+            'events for account ${account.id}',
+          );
+          allEvents.addAll(recovered);
         }
       }
     }
@@ -72,6 +93,11 @@ class CalendarManager {
   static bool _isOutlookUrl(String url) =>
       url.contains('outlook.office365.com') || url.contains('outlook.office.com');
 
+  /// Whether to attempt the local Outlook fallback for a failed Outlook ICS
+  /// fetch — true for auth rejections and for throttle/transient failures.
+  static bool _shouldTryOutlookFallback(Object error) =>
+      _isAuthError(error) || _isTransientError(error);
+
   /// Returns true if [error] looks like an HTTP auth/rejection error (400, 401,
   /// 403, 407) — the typical codes returned when Exchange Online blocks an
   /// anonymous ICS request from a corporate-managed device.
@@ -79,6 +105,25 @@ class CalendarManager {
     if (error is DioException) {
       final code = error.response?.statusCode;
       return code == 400 || code == 401 || code == 403 || code == 407;
+    }
+    return false;
+  }
+
+  /// Returns true for throttle/transient failures — HTTP 429 (Exchange Online
+  /// rate-limiting the published feed), 5xx, and connection/timeout errors.
+  static bool _isTransientError(Object error) {
+    if (error is DioException) {
+      final code = error.response?.statusCode;
+      if (code == 429 || (code != null && code >= 500 && code < 600)) return true;
+      switch (error.type) {
+        case DioExceptionType.connectionTimeout:
+        case DioExceptionType.receiveTimeout:
+        case DioExceptionType.sendTimeout:
+        case DioExceptionType.connectionError:
+          return true;
+        default:
+          return false;
+      }
     }
     return false;
   }
