@@ -4,6 +4,18 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.3.1] — 2026-06-03
+
+### Fixed
+- **Outlook/Office365 calendars no longer go blank on refresh** — large, slow Exchange Online feeds (e.g. a ~2 MB published `.ics`) frequently exceeded the 30s receive timeout on corporate-managed networks, and a failed fetch silently overwrote the cache, dropping all of that account's events. The receive timeout is now 60s (connect 15s), and each account **retains its last successfully-fetched events** when a refresh fails — so a slow or flaky feed no longer empties the calendar.
+- **Refresh keeps showing events while fetching** — a manual or auto refresh no longer blanks the list to a spinner when events are already loaded; the existing events stay visible until new data arrives, and a transient failure is no longer surfaced as a full-screen error when cached events exist.
+
+### Changed
+- **Smarter retry on transient failures** — ICS fetches now retry HTTP 429 (throttling, honouring `Retry-After`), 5xx, and connection errors with backoff, while receive/send timeouts fail fast to the retained events instead of multiplying the wait. The local Outlook fallback now also triggers on throttle/transient errors, not just auth rejections.
+- Added per-attempt diagnostic logging (`[ICS] fetch attempt …`) recording HTTP status, error type, and `Retry-After` for easier field diagnosis.
+
+---
+
 ## [3.2.0] — 2026-06-02
 
 ### Added

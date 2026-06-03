@@ -7,32 +7,107 @@ import '../../core/time_utils.dart';
 /// rejected to prevent memory exhaustion from malicious or misconfigured servers.
 const _kMaxIcsBytes = 10 * 1024 * 1024;
 
+/// Number of retry attempts after the first try for transient failures
+/// (HTTP 429 throttling, 5xx, timeouts). Exchange Online aggressively
+/// throttles published `.ics` URLs with HTTP 429, which is the usual reason a
+/// manual refresh "works a couple of times then fails".
+const _kMaxRetries = 2;
+
+/// Never block a refresh longer than this for a single backoff wait, even if
+/// the server's Retry-After asks for more. If still throttled after this, the
+/// caller keeps the last-good events rather than freezing the UI.
+const _kMaxRetryWaitMs = 5000;
+
 class IcsCalendarService {
+  // Corporate-managed networks (e.g. Defender network extensions) and large
+  // Exchange Online feeds (Blend's is ~2 MB) transfer much slower than a raw
+  // connection, so 30s frequently tripped a receive timeout mid-download.
+  // 60s comfortably covers the observed ~10s-and-up transfer with headroom.
   final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 10),
-    receiveTimeout: const Duration(seconds: 30),
+    connectTimeout: const Duration(seconds: 15),
+    receiveTimeout: const Duration(seconds: 60),
   ));
 
   Future<List<NormalizedEvent>> fetchEvents(String accountId, String url) async {
     // webcal:// is just http/https — normalize it
     final normalized = url.replaceFirst(RegExp(r'^webcal://', caseSensitive: false), 'https://');
-    final response = await _dio.get(
-      normalized,
-      options: Options(headers: {
-        'Cache-Control': 'no-cache, no-store',
-        'Pragma': 'no-cache',
-      }),
-    );
 
-    // Reject oversized feeds before parsing to avoid memory exhaustion.
-    final raw = response.data as String;
-    if (raw.length > _kMaxIcsBytes) {
-      throw Exception(
-        'ICS feed is too large (${(raw.length / 1024 / 1024).toStringAsFixed(1)} MB). '
-        'Maximum allowed is ${_kMaxIcsBytes ~/ 1024 ~/ 1024} MB.',
-      );
+    DioException? lastError;
+    for (var attempt = 0; attempt <= _kMaxRetries; attempt++) {
+      try {
+        final response = await _dio.get<String>(
+          normalized,
+          // Force plain text: never let Dio JSON-decode a text/calendar body
+          // (a mis-typed error response would otherwise throw a cast error).
+          options: Options(
+            responseType: ResponseType.plain,
+            headers: {
+              'Cache-Control': 'no-cache, no-store',
+              'Pragma': 'no-cache',
+            },
+          ),
+        );
+
+        // Reject oversized feeds before parsing to avoid memory exhaustion.
+        final raw = response.data ?? '';
+        if (raw.length > _kMaxIcsBytes) {
+          throw Exception(
+            'ICS feed is too large (${(raw.length / 1024 / 1024).toStringAsFixed(1)} MB). '
+            'Maximum allowed is ${_kMaxIcsBytes ~/ 1024 ~/ 1024} MB.',
+          );
+        }
+        return parseIcs(raw, accountId);
+      } on DioException catch (e) {
+        lastError = e;
+        final status = e.response?.statusCode;
+        final retryAfterMs = _retryAfterMs(e.response);
+        debugPrint(
+          '[ICS] fetch attempt ${attempt + 1}/${_kMaxRetries + 1} failed for '
+          '$normalized — status=$status type=${e.type} '
+          'retryAfter=${retryAfterMs ?? '-'}ms',
+        );
+
+        // Only retry transient/throttle failures. Permanent errors (auth, 404,
+        // bad request other than 429) are rethrown immediately so the caller
+        // can decide whether to fall back to the local Outlook app.
+        if (attempt < _kMaxRetries && _isTransient(e)) {
+          final backoffMs = 500 * (1 << attempt); // 500ms, 1000ms, …
+          final waitMs = (retryAfterMs ?? backoffMs).clamp(0, _kMaxRetryWaitMs);
+          debugPrint('[ICS] retrying in ${waitMs}ms');
+          await Future<void>.delayed(Duration(milliseconds: waitMs));
+          continue;
+        }
+        rethrow;
+      }
     }
-    return parseIcs(raw, accountId);
+    // Loop always returns or rethrows above; this satisfies the analyzer.
+    throw lastError!;
+  }
+
+  /// True for failures worth an immediate retry: HTTP 429 (throttling), 5xx,
+  /// and connection failures. Deliberately excludes receive/send *timeouts*:
+  /// those already consumed the full (long) timeout window, so retrying just
+  /// multiplies the wait — we fail fast to retained events / the fallback and
+  /// let the next refresh try again. 4xx auth/not-found errors aren't retried.
+  static bool _isTransient(DioException e) {
+    final code = e.response?.statusCode;
+    if (code == 429 || (code != null && code >= 500 && code < 600)) return true;
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.connectionError:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /// Parses a `Retry-After` header (delta-seconds form) into milliseconds.
+  /// Returns null when absent or in HTTP-date form (we fall back to backoff).
+  static int? _retryAfterMs(Response? response) {
+    final value = response?.headers.value('retry-after');
+    if (value == null) return null;
+    final seconds = int.tryParse(value.trim());
+    return seconds == null ? null : seconds * 1000;
   }
 
   List<NormalizedEvent> parseIcs(String icsData, String accountId) {
