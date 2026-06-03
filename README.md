@@ -2,7 +2,7 @@
 
 > A Flutter desktop app that unifies your calendars, captures meeting notes, and turns action items into tasks — with Claude AI built in.
 
-**Platform:** macOS · Windows &nbsp;|&nbsp; **Version:** 3.2.0 &nbsp;|&nbsp; **License:** MIT
+**Platform:** macOS · Windows &nbsp;|&nbsp; **Version:** 3.3.1 &nbsp;|&nbsp; **License:** MIT
 
 [![Release](https://img.shields.io/github/v/release/ankit2101/CalendarTask-Manager)](https://github.com/ankit2101/CalendarTask-Manager/releases)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-blue)](https://github.com/ankit2101/CalendarTask-Manager/releases)
@@ -64,7 +64,8 @@ Grab the latest release from [**Releases →**](https://github.com/ankit2101/Cal
 - Private appointments shown with a 🔒 lock icon
 - **Per-calendar colour** — pick a colour for each feed; events inherit it on the day view
 - **Inline rename** — edit a calendar account's display name directly in the Accounts tab
-- **Auto-refresh** every 10 minutes — no manual action needed
+- **Auto-refresh** every 10 minutes (configurable in Settings) — no manual action needed
+- **Resilient refresh** — if a feed is slow or temporarily unreachable, the last successfully-fetched events stay visible instead of the calendar going blank
 - **Dual timezone display** — event cards show the original source timezone (e.g. "8:30 AM – 9:00 AM MST") alongside your local time (e.g. "9:30 PM IST")
 - **Edit meeting time** — tap the ✏️ pencil icon on any event to correct the start/end time if it was captured in the wrong timezone; an **edited** badge marks overridden events and a reset button restores the original
 - **Outlook for Mac fallback** — on corporate laptops where a security agent (e.g. Microsoft Defender for Endpoint, Zscaler) blocks anonymous ICS requests, the app automatically reads events from the locally installed Outlook app instead via AppleScript; no configuration needed
@@ -114,7 +115,7 @@ Choose your Claude model in **Settings**:
 - **Encrypted data file** — all local data is protected with **AES-256-GCM** authenticated encryption; any on-disk tampering is detected and rejected
 - **Secure credential storage** — your Claude API key lives in the OS keychain (**macOS Keychain** / **Windows Credential Manager**), never in a plaintext file
 - **SSRF protection** — calendar URLs are validated to block private-network addresses (localhost, RFC 1918 ranges, link-local)
-- **Request limits** — ICS feeds are capped at 10 MB; HTTP connections time out at 10 s; recurring event expansion is capped to prevent CPU abuse
+- **Request limits** — ICS feeds are capped at 10 MB; HTTP connections time out at 15 s connect / 60 s receive; recurring event expansion is capped to prevent CPU abuse
 - **AI consent** — a one-time dialog informs you before any meeting content is sent to Claude
 - **No telemetry** — no analytics, no crash reporting, no data leaves the device except Claude API calls you explicitly trigger
 
@@ -167,6 +168,8 @@ All calendars are connected via a private ICS URL — no OAuth or third-party si
 6. In the app → **Accounts** → paste the URL → **Add**
 
 > **On corporate laptops (Defender for Endpoint / Zscaler / etc.):** Enterprise security agents route all traffic through a proxy, which causes Exchange Online to reject anonymous ICS requests with HTTP 400 — even with a freshly generated URL. The app detects this automatically and falls back to reading events from the **locally installed Outlook for Mac app** via AppleScript. macOS will show a one-time permission prompt — click **OK** — and your calendar will load normally from then on. The ICS URL should still be added in Accounts; the fallback activates only when the feed fails.
+>
+> **Large or slow Outlook feeds:** If your published ICS feed is large (~2 MB is common for busy Outlook calendars), the app uses a 60 s receive timeout to ensure the full download completes on corporate-managed networks. If a refresh still fails, the last successfully-fetched events are kept visible — the calendar never goes blank.
 
 ### iCloud Calendar
 
@@ -217,7 +220,7 @@ Both files must be present in the same folder on every machine. Once the key fil
 | ICS parsing | Custom RFC 5545 parser with full TZID, RRULE, EXDATE support |
 | Outlook fallback | NSAppleScript via Flutter method channel (`OutlookBridge.swift`) |
 | Timezones | IANA tz database (`timezone` package) + Windows↔IANA map |
-| HTTP | Dio (with timeouts + response size cap) |
+| HTTP | Dio (15 s connect / 60 s receive, 10 MB response cap, retry with backoff) |
 | Encryption | `encrypt` package — AES-256-GCM |
 | Theme | Catppuccin Mocha |
 
@@ -277,10 +280,13 @@ See the `docs/` directory for build and development instructions:
 
 See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 
-**Latest (v3.2.0):**
-- Outlook for Mac fallback — automatic ICS→AppleScript failover on corporate laptops with Defender/Zscaler
-- Claude model list updated to current Anthropic lineup (Opus 4.8, Sonnet 4.6, Haiku 4.5)
-- Default model changed to Claude Sonnet 4.6
+**Latest (v3.3.1):**
+- Outlook/Office365 calendars no longer go blank on refresh — last-good events retained on failure, 60 s receive timeout for large feeds
+- Refresh keeps showing events while fetching; transient failures no longer surface as a full-screen error
+- Smarter retry on HTTP 429 throttling, 5xx, and connection errors with `Retry-After`-aware backoff
+
+**v3.3.0:**
+- Configurable auto-refresh interval in Settings (1 / 5 / 10 / 30 / 60 min)
 
 ---
 
