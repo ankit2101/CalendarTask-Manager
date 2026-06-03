@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../../models/calendar_event.dart';
@@ -85,6 +87,15 @@ class OutlookCalendarService {
       return events;
     } on PlatformException catch (e) {
       debugPrint('[OutlookCalendarService] PlatformException: ${e.code} — ${e.message}');
+      // APPLESCRIPT_ERROR typically means the Automation permission has not been
+      // granted (macOS error -1743: "Not authorized to send Apple events").
+      // Fire a permission probe so macOS shows the TCC prompt. This covers
+      // existing users who already had an Outlook account before upgrading —
+      // they never go through _addIcsAccount, so the prompt must fire here
+      // when the fallback is actually attempted and fails.
+      if (e.code == 'APPLESCRIPT_ERROR') {
+        unawaited(requestAutomationPermission());
+      }
       return [];
     } catch (e) {
       debugPrint('[OutlookCalendarService] Unexpected error: $e');
