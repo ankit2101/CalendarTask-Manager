@@ -38,7 +38,14 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
 // Calendar events
 final eventsProvider = StateNotifierProvider<EventsNotifier, AsyncValue<List<NormalizedEvent>>>((ref) {
-  return EventsNotifier();
+  final notifier = EventsNotifier();
+  // Apply interval immediately and whenever settings change
+  ref.listen<AppSettings>(settingsProvider, (prev, next) {
+    if (prev?.autoRefreshIntervalMinutes != next.autoRefreshIntervalMinutes) {
+      notifier.setRefreshInterval(next.autoRefreshIntervalMinutes);
+    }
+  }, fireImmediately: true);
+  return notifier;
 });
 
 class EventsNotifier extends StateNotifier<AsyncValue<List<NormalizedEvent>>> {
@@ -46,8 +53,11 @@ class EventsNotifier extends StateNotifier<AsyncValue<List<NormalizedEvent>>> {
 
   EventsNotifier() : super(const AsyncValue.loading()) {
     refresh();
-    // Auto-refresh every 15 minutes so the calendar stays current
-    _autoRefreshTimer = Timer.periodic(const Duration(minutes: 15), (_) => refresh());
+  }
+
+  void setRefreshInterval(int minutes) {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(Duration(minutes: minutes), (_) => refresh());
   }
 
   @override

@@ -1,8 +1,8 @@
 name: calendar_task_manager
-description: "A Flutter CalendarTask Manager app."
+description: "Desktop calendar + meeting notes + to-do app with Claude AI action-item extraction. Connects ICS/Webcal feeds, supports Outlook fallback, AES-256-GCM encrypted local storage. macOS & Windows."
 publish_to: 'none'
 
-version: 3.2.0+1
+version: 3.3.0+1
 
 environment:
   sdk: ^3.11.4
