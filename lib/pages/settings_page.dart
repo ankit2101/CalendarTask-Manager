@@ -203,6 +203,51 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
           const SizedBox(height: 16),
 
+          // Auto-refresh interval
+          const Text('Auto Refresh Interval', style: TextStyle(fontWeight: FontWeight.w600, color: CatppuccinMocha.text)),
+          const SizedBox(height: 4),
+          const Text(
+            'How often the calendar automatically refreshes in the background.',
+            style: TextStyle(fontSize: 13, color: CatppuccinMocha.overlay0),
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<int>(
+            value: kAutoRefreshIntervalOptions.contains(settings.autoRefreshIntervalMinutes)
+                ? settings.autoRefreshIntervalMinutes
+                : 15,
+            dropdownColor: CatppuccinMocha.surface0,
+            style: const TextStyle(color: CatppuccinMocha.text, fontSize: 14),
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              fillColor: CatppuccinMocha.surface0,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: CatppuccinMocha.surface2),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: CatppuccinMocha.surface2),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: CatppuccinMocha.mauve),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            items: kAutoRefreshIntervalOptions.map((minutes) => DropdownMenuItem(
+              value: minutes,
+              child: Text(autoRefreshIntervalLabel(minutes), style: const TextStyle(color: CatppuccinMocha.text)),
+            )).toList(),
+            onChanged: (val) {
+              if (val == null) return;
+              ref.read(settingsProvider.notifier).update(
+                settings.copyWith(autoRefreshIntervalMinutes: val),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+
           // Minimum attendees
           const Text('Minimum Attendees for Note Prompt', style: TextStyle(fontWeight: FontWeight.w600, color: CatppuccinMocha.text)),
           const SizedBox(height: 8),

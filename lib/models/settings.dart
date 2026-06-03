@@ -19,6 +19,15 @@ const kClaudeModels = [
 
 const kDefaultClaudeModelId = 'claude-sonnet-4-6';
 
+/// Allowed auto-refresh intervals in minutes.
+const kAutoRefreshIntervalOptions = [15, 60, 240, 480, 720];
+
+String autoRefreshIntervalLabel(int minutes) {
+  if (minutes < 60) return '$minutes min';
+  final h = minutes ~/ 60;
+  return '$h ${h == 1 ? 'hour' : 'hours'}';
+}
+
 class AppSettings {
   final int pollingIntervalSeconds;
   final int promptDelayMinutes;
@@ -28,6 +37,7 @@ class AppSettings {
   final String globalShortcutQuickNote;
   final String globalShortcutToggleApp;
   final String claudeModelId;
+  final int autoRefreshIntervalMinutes;
 
   const AppSettings({
     this.pollingIntervalSeconds = 30,
@@ -38,6 +48,7 @@ class AppSettings {
     this.globalShortcutQuickNote = 'CommandOrControl+Shift+N',
     this.globalShortcutToggleApp = 'CommandOrControl+Shift+M',
     this.claudeModelId = kDefaultClaudeModelId,
+    this.autoRefreshIntervalMinutes = 15,
   });
 
   AppSettings copyWith({
@@ -45,6 +56,7 @@ class AppSettings {
     int? minimumAttendeesForPrompt, bool? launchAtLogin,
     bool? showDockIcon, String? globalShortcutQuickNote,
     String? globalShortcutToggleApp, String? claudeModelId,
+    int? autoRefreshIntervalMinutes,
   }) => AppSettings(
     pollingIntervalSeconds: pollingIntervalSeconds ?? this.pollingIntervalSeconds,
     promptDelayMinutes: promptDelayMinutes ?? this.promptDelayMinutes,
@@ -54,6 +66,7 @@ class AppSettings {
     globalShortcutQuickNote: globalShortcutQuickNote ?? this.globalShortcutQuickNote,
     globalShortcutToggleApp: globalShortcutToggleApp ?? this.globalShortcutToggleApp,
     claudeModelId: claudeModelId ?? this.claudeModelId,
+    autoRefreshIntervalMinutes: autoRefreshIntervalMinutes ?? this.autoRefreshIntervalMinutes,
   );
 
   Map<String, dynamic> toJson() => {
@@ -65,6 +78,7 @@ class AppSettings {
     'globalShortcutQuickNote': globalShortcutQuickNote,
     'globalShortcutToggleApp': globalShortcutToggleApp,
     'claudeModelId': claudeModelId,
+    'autoRefreshIntervalMinutes': autoRefreshIntervalMinutes,
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
@@ -76,5 +90,6 @@ class AppSettings {
     globalShortcutQuickNote: json['globalShortcutQuickNote'] as String? ?? 'CommandOrControl+Shift+N',
     globalShortcutToggleApp: json['globalShortcutToggleApp'] as String? ?? 'CommandOrControl+Shift+M',
     claudeModelId: json['claudeModelId'] as String? ?? kDefaultClaudeModelId,
+    autoRefreshIntervalMinutes: json['autoRefreshIntervalMinutes'] as int? ?? 15,
   );
 }
