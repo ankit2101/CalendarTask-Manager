@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../../models/calendar_event.dart';
@@ -11,20 +13,42 @@ import '../../models/calendar_event.dart';
 class OutlookCalendarService {
   static const _channel = MethodChannel('com.caltask/outlook');
 
-  bool? _available; // cached so we don't hammer the channel on every refresh
+  bool? _installed; // cached — installation doesn't change at runtime
 
-  /// Returns true if Microsoft Outlook is installed and the Apple Events
-  /// bridge is functional. Result is cached after the first call.
+  /// Returns true if Microsoft Outlook is installed (does NOT check Automation
+  /// permission — use [requestAutomationPermission] for that).
   Future<bool> isAvailable() async {
-    _available ??= await _checkAvailable();
-    return _available!;
+    _installed ??= await _checkInstalled();
+    return _installed!;
   }
 
-  Future<bool> _checkAvailable() async {
+  Future<bool> _checkInstalled() async {
     try {
       return await _channel.invokeMethod<bool>('isAvailable') ?? false;
     } catch (e) {
       debugPrint('[OutlookCalendarService] isAvailable check failed: $e');
+      return false;
+    }
+  }
+
+  /// Fires a minimal Apple Events probe against Outlook, triggering the macOS
+  /// TCC "Allow … to control Microsoft Outlook?" prompt on first call.
+  ///
+  /// Returns `true` if Automation is authorized, `false` if denied/cancelled,
+  /// and throws a [PlatformException] with code `NOT_INSTALLED` if Outlook
+  /// is not installed.
+  ///
+  /// Safe to call multiple times — after authorization is granted it returns
+  /// immediately.
+  Future<bool> requestAutomationPermission() async {
+    try {
+      return await _channel.invokeMethod<bool>('requestAutomationPermission') ?? false;
+    } on PlatformException catch (e) {
+      if (e.code == 'NOT_INSTALLED') rethrow;
+      debugPrint('[OutlookCalendarService] permission probe failed: $e');
+      return false;
+    } catch (e) {
+      debugPrint('[OutlookCalendarService] permission probe failed: $e');
       return false;
     }
   }
@@ -63,6 +87,17 @@ class OutlookCalendarService {
       return events;
     } on PlatformException catch (e) {
       debugPrint('[OutlookCalendarService] PlatformException: ${e.code} — ${e.message}');
+      // APPLESCRIPT_ERROR typically means the Automation permission has not been
+      // granted (macOS error -1743: "Not authorized to send Apple events").
+      // Fire a permission probe so macOS shows the TCC prompt. This covers
+      // existing users who already had an Outlook account before upgrading —
+      // they never go through _addIcsAccount, so the prompt must fire here
+      // when the fallback is actually attempted and fails.
+      if (e.code == 'APPLESCRIPT_ERROR') {
+        // Fire-and-forget: silently swallow NOT_INSTALLED in case Outlook was
+        // removed between the isAvailable() check and this error being thrown.
+        unawaited(requestAutomationPermission().catchError((_) => false));
+      }
       return [];
     } catch (e) {
       debugPrint('[OutlookCalendarService] Unexpected error: $e');

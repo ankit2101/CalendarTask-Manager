@@ -13,6 +13,11 @@ class OutlookBridge {
       switch call.method {
       case "isAvailable":
         result(Self.isOutlookInstalled())
+      case "requestAutomationPermission":
+        // Fires a trivial AppleScript against Outlook to trigger the macOS
+        // TCC "Allow X to control Outlook?" prompt if it hasn't been shown yet.
+        // Returns true if authorized, false if denied/cancelled, error if not installed.
+        Self.requestAutomationPermission(result: result)
       case "fetchEvents":
         let args = call.arguments as? [String: Any] ?? [:]
         let daysBack    = args["daysBack"]    as? Int ?? 30
@@ -28,6 +33,31 @@ class OutlookBridge {
 
   private static func isOutlookInstalled() -> Bool {
     NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.microsoft.Outlook") != nil
+  }
+
+  // MARK: - Permission probe
+
+  /// Runs a minimal AppleScript that asks Outlook for its name. This is the
+  /// lightest possible Apple Events call — it triggers macOS to show the TCC
+  /// Automation prompt if permission has not been granted yet, and returns
+  /// immediately once permission is resolved.
+  private static func requestAutomationPermission(result: @escaping FlutterResult) {
+    guard isOutlookInstalled() else {
+      result(FlutterError(code: "NOT_INSTALLED",
+                          message: "Microsoft Outlook is not installed", details: nil))
+      return
+    }
+    DispatchQueue.global(qos: .userInitiated).async {
+      let script = "tell application \"Microsoft Outlook\" to return name"
+      guard let appleScript = NSAppleScript(source: script) else {
+        DispatchQueue.main.async { result(false) }
+        return
+      }
+      var errorDict: NSDictionary?
+      appleScript.executeAndReturnError(&errorDict)
+      let authorized = errorDict == nil
+      DispatchQueue.main.async { result(authorized) }
+    }
   }
 
   // MARK: - Fetch
