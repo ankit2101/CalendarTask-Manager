@@ -94,7 +94,9 @@ class OutlookCalendarService {
       // they never go through _addIcsAccount, so the prompt must fire here
       // when the fallback is actually attempted and fails.
       if (e.code == 'APPLESCRIPT_ERROR') {
-        unawaited(requestAutomationPermission());
+        // Fire-and-forget: silently swallow NOT_INSTALLED in case Outlook was
+        // removed between the isAvailable() check and this error being thrown.
+        unawaited(requestAutomationPermission().catchError((_) => false));
       }
       return [];
     } catch (e) {
