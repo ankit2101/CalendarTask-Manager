@@ -108,6 +108,9 @@ class _CalendarTaskAppState extends ConsumerState<CalendarTaskApp> {
     // Keep the sync watcher alive for the lifetime of the app.
     ref.watch(syncWatcherProvider);
 
+    // Kick off the weekly model sync (no-op if cache is fresh).
+    ref.watch(availableModelsProvider);
+
     return MaterialApp.router(
       title: 'CalendarTask Manager',
       theme: appTheme,

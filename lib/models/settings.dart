@@ -1,20 +1,36 @@
 /// Available Claude models shown in the Settings dropdown.
 class ClaudeModel {
-  final String id;       // API model ID
-  final String label;    // Display name
-  final String tier;     // 'Opus' | 'Sonnet' | 'Haiku'
+  final String id;
+  final String label;
+  final String tier;  // 'Fable' | 'Opus' | 'Sonnet' | 'Haiku'
   const ClaudeModel({required this.id, required this.label, required this.tier});
+
+  static String tierFromId(String id) {
+    if (id.contains('fable'))  return 'Fable';
+    if (id.contains('opus'))   return 'Opus';
+    if (id.contains('sonnet')) return 'Sonnet';
+    if (id.contains('haiku'))  return 'Haiku';
+    return 'Other';
+  }
+
+  Map<String, dynamic> toJson() => {'id': id, 'label': label, 'tier': tier};
+
+  factory ClaudeModel.fromJson(Map<String, dynamic> json) => ClaudeModel(
+    id:    json['id']    as String,
+    label: json['label'] as String,
+    tier:  json['tier']  as String,
+  );
 }
 
+/// Static fallback list used before the first successful API sync.
 const kClaudeModels = [
-  // Latest
-  ClaudeModel(id: 'claude-opus-4-8',             label: 'Claude Opus 4.8',       tier: 'Opus'),
-  ClaudeModel(id: 'claude-sonnet-4-6',           label: 'Claude Sonnet 4.6',     tier: 'Sonnet'),
-  ClaudeModel(id: 'claude-haiku-4-5-20251001',   label: 'Claude Haiku 4.5',      tier: 'Haiku'),
-  // Legacy
-  ClaudeModel(id: 'claude-opus-4-7',             label: 'Claude Opus 4.7',       tier: 'Opus'),
-  ClaudeModel(id: 'claude-opus-4-6',             label: 'Claude Opus 4.6',       tier: 'Opus'),
-  ClaudeModel(id: 'claude-sonnet-4-5-20250929',  label: 'Claude Sonnet 4.5',     tier: 'Sonnet'),
+  ClaudeModel(id: 'claude-fable-5',            label: 'Claude Fable 5',        tier: 'Fable'),
+  ClaudeModel(id: 'claude-opus-4-8',           label: 'Claude Opus 4.8',       tier: 'Opus'),
+  ClaudeModel(id: 'claude-sonnet-4-6',         label: 'Claude Sonnet 4.6',     tier: 'Sonnet'),
+  ClaudeModel(id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5',      tier: 'Haiku'),
+  ClaudeModel(id: 'claude-opus-4-7',           label: 'Claude Opus 4.7',       tier: 'Opus'),
+  ClaudeModel(id: 'claude-opus-4-6',           label: 'Claude Opus 4.6',       tier: 'Opus'),
+  ClaudeModel(id: 'claude-sonnet-4-5-20250929',label: 'Claude Sonnet 4.5',     tier: 'Sonnet'),
 ];
 
 const kDefaultClaudeModelId = 'claude-sonnet-4-6';
