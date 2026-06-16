@@ -4,6 +4,13 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.3.5] — 2026-06-16
+
+### Fixed
+- **Anthropic key not configured** — API key now persists reliably across debug and ad-hoc release builds. The previous implementation stored the key exclusively in macOS Keychain or SharedPreferences depending on the build's entitlements, causing the key to silently disappear when switching builds. The new stage-then-promote strategy always writes to SharedPreferences first, then promotes to Keychain on capable builds and removes the plaintext copy only after a confirmed write. Keys set on any build type are now visible on all others.
+
+---
+
 ## [3.3.4] — 2026-06-16
 
 ### Added
