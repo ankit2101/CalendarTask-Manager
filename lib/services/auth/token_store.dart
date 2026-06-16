@@ -79,7 +79,9 @@ class TokenStore {
       } catch (_) {}
       // Only remove the plaintext staging copy when the Keychain write
       // actually succeeded — a failed write leaves the pref as fallback.
-      if (promoted) await prefs.remove('$_prefix$key');
+      if (promoted) {
+        try { await prefs.remove('$_prefix$key'); } catch (_) {}
+      }
     }
   }
 
