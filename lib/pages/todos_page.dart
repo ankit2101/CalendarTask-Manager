@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
+import '../core/theme/app_theme.dart';
 import '../core/theme/catppuccin_mocha.dart';
 import '../models/todo_task.dart';
 import '../providers/app_providers.dart';
@@ -259,18 +260,7 @@ class _EditTodoDialogState extends ConsumerState<_EditTodoDialog> {
       initialDate: _dueDate ?? DateTime.now().add(const Duration(days: 2)),
       firstDate: DateTime(2020),
       lastDate: DateTime(2100),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.dark(
-            primary: CatppuccinMocha.mauve,
-            onPrimary: CatppuccinMocha.base,
-            surface: CatppuccinMocha.surface0,
-            onSurface: CatppuccinMocha.text,
-          ),
-          dialogTheme: const DialogThemeData(backgroundColor: CatppuccinMocha.base),
-        ),
-        child: child!,
-      ),
+      builder: mauvePickerTheme,
     );
     if (picked != null) setState(() => _dueDate = picked);
   }
@@ -1147,19 +1137,7 @@ class _HoldUntilDialogState extends State<_HoldUntilDialog> {
       initialDate: _holdUntil,
       firstDate: DateTime.now(),
       lastDate: DateTime(2100),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.dark(
-            primary: CatppuccinMocha.mauve,
-            onPrimary: CatppuccinMocha.base,
-            surface: CatppuccinMocha.surface0,
-            onSurface: CatppuccinMocha.text,
-          ),
-          dialogTheme:
-              const DialogThemeData(backgroundColor: CatppuccinMocha.base),
-        ),
-        child: child!,
-      ),
+      builder: mauvePickerTheme,
     );
     if (picked != null) {
       setState(() => _holdUntil = DateTime(
@@ -1173,19 +1151,7 @@ class _HoldUntilDialogState extends State<_HoldUntilDialog> {
     final picked = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_holdUntil),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.dark(
-            primary: CatppuccinMocha.mauve,
-            onPrimary: CatppuccinMocha.base,
-            surface: CatppuccinMocha.surface0,
-            onSurface: CatppuccinMocha.text,
-          ),
-          dialogTheme:
-              const DialogThemeData(backgroundColor: CatppuccinMocha.base),
-        ),
-        child: child!,
-      ),
+      builder: mauvePickerTheme,
     );
     if (picked != null) {
       setState(() => _holdUntil = DateTime(

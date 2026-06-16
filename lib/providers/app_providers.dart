@@ -9,11 +9,6 @@ import '../services/calendar/calendar_manager.dart';
 import '../services/ai/claude_client.dart';
 import '../services/auth/token_store.dart';
 
-// Database singleton
-final databaseProvider = FutureProvider<AppDatabase>((ref) async {
-  return AppDatabase.getInstance();
-});
-
 // Settings
 final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((ref) {
   return SettingsNotifier();
