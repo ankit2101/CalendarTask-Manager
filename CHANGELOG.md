@@ -4,6 +4,14 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [3.3.4] — 2026-06-16
+
+### Added
+- **Claude Fable 5** — added `claude-fable-5` to the model picker (Fable tier, pink badge).
+- **Automatic weekly model sync** — the app now calls `GET /v1/models` on startup (at most once per 7 days) and updates the model picker with the latest available Claude models. Falls back to the built-in list when no API key is set or the call fails.
+
+---
+
 ## [3.3.3] — 2026-06-03
 
 ### Fixed
