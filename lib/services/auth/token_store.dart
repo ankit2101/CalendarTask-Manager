@@ -6,12 +6,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// with SharedPreferences used only as a short-lived handoff buffer.
 ///
 /// Write path: always stage to SharedPreferences first, then promote to
-/// Keychain. If the Keychain write succeeds the SharedPreferences copy is
-/// deleted immediately so the plaintext plist is never the long-term store.
+/// Keychain. prefs.remove only runs after a confirmed successful Keychain
+/// write, so a failed write leaves the pref as a fallback rather than
+/// silently dropping the key.
 ///
 /// Read path: prefer Keychain; if not found, check SharedPreferences and
-/// auto-promote to Keychain (then delete from SharedPreferences) when the
-/// entitlement is available. This covers the ad-hoc→signed-release upgrade
+/// auto-promote via saveSecret (then delete from SharedPreferences) when the
+/// entitlement is available. This covers the ad-hoc to signed-release upgrade
 /// path without leaving a permanent plaintext copy.
 class TokenStore {
   static final TokenStore _instance = TokenStore._();
@@ -40,27 +41,23 @@ class TokenStore {
   }
 
   Future<String?> loadSecret(String key) async {
-    if (await _isKeychainAvailable()) {
+    final keychainOk = await _isKeychainAvailable();
+    if (keychainOk) {
       try {
         final val = await _storage.read(key: '$_prefix$key');
         if (val != null) return val;
       } catch (_) {}
     }
 
-    // Check SharedPreferences — either the Keychain entitlement is absent
+    // Check SharedPreferences: either the Keychain entitlement is absent
     // (ad-hoc build) or the key was staged here by a previous saveSecret and
-    // the Keychain write failed.  If Keychain is now available, promote and
-    // delete so the plaintext copy doesn't linger.
+    // the Keychain write failed. If Keychain is now available, promote via
+    // saveSecret which handles the atomic stage-and-cleanup correctly.
     try {
       final prefs = await SharedPreferences.getInstance();
       final staged = prefs.getString('$_prefix$key');
       if (staged != null && staged.isNotEmpty) {
-        if (await _isKeychainAvailable()) {
-          try {
-            await _storage.write(key: '$_prefix$key', value: staged);
-            await prefs.remove('$_prefix$key');
-          } catch (_) {}
-        }
+        if (keychainOk) await saveSecret(key, staged);
         return staged;
       }
     } catch (_) {}
@@ -75,11 +72,14 @@ class TokenStore {
     await prefs.setString('$_prefix$key', value);
 
     if (await _isKeychainAvailable()) {
+      var promoted = false;
       try {
         await _storage.write(key: '$_prefix$key', value: value);
-        // Keychain write succeeded — remove the plaintext staging copy.
-        await prefs.remove('$_prefix$key');
+        promoted = true;
       } catch (_) {}
+      // Only remove the plaintext staging copy when the Keychain write
+      // actually succeeded — a failed write leaves the pref as fallback.
+      if (promoted) await prefs.remove('$_prefix$key');
     }
   }
 
@@ -89,7 +89,7 @@ class TokenStore {
         await _storage.delete(key: '$_prefix$key');
       } catch (_) {}
     }
-    // Also clean up SharedPreferences (fallback store or legacy migration).
+    // Also clean up SharedPreferences (staging store or ad-hoc fallback).
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('$_prefix$key');
