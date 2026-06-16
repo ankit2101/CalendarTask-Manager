@@ -1,6 +1,19 @@
 import 'package:flutter/material.dart';
 import 'catppuccin_mocha.dart';
 
+Widget mauvePickerTheme(BuildContext context, Widget? child) => Theme(
+      data: Theme.of(context).copyWith(
+        colorScheme: const ColorScheme.dark(
+          primary: CatppuccinMocha.mauve,
+          onPrimary: CatppuccinMocha.base,
+          surface: CatppuccinMocha.surface0,
+          onSurface: CatppuccinMocha.text,
+        ),
+        dialogTheme: const DialogThemeData(backgroundColor: CatppuccinMocha.base),
+      ),
+      child: child!,
+    );
+
 final appTheme = ThemeData(
   brightness: Brightness.dark,
   scaffoldBackgroundColor: CatppuccinMocha.base,

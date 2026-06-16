@@ -45,7 +45,7 @@ void main(List<String> args) {
   }
 
   final content = file.readAsStringSync().trim();
-  String? plaintext;
+  late String plaintext;
 
   if (content.startsWith(_kGcmPrefix)) {
     // v2 GCM format
@@ -73,8 +73,6 @@ void main(List<String> args) {
       exit(1);
     }
   }
-
-  if (plaintext == null) { stderr.writeln('Decryption returned null'); exit(1); }
 
   File(outputPath).writeAsStringSync(plaintext, flush: true);
   stdout.writeln('✓ Decrypted successfully → $outputPath');
