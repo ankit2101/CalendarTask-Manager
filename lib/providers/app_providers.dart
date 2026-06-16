@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/calendar_event.dart';
 import '../models/todo_task.dart';
@@ -7,6 +8,7 @@ import '../models/account.dart';
 import '../services/storage/app_database.dart';
 import '../services/calendar/calendar_manager.dart';
 import '../services/ai/claude_client.dart';
+import '../services/ai/model_sync_service.dart';
 import '../services/auth/token_store.dart';
 
 // Settings
@@ -290,3 +292,37 @@ final syncWatcherProvider = Provider<void>((ref) {
     });
   });
 });
+
+// Available Claude models — starts with the static fallback list, then refreshes
+// from the Anthropic Models API (at most once per 7 days) if an API key is set.
+final availableModelsProvider =
+    StateNotifierProvider<AvailableModelsNotifier, List<ClaudeModel>>((ref) {
+  return AvailableModelsNotifier(ref);
+});
+
+class AvailableModelsNotifier extends StateNotifier<List<ClaudeModel>> {
+  AvailableModelsNotifier(Ref ref) : super(kClaudeModels.toList()) {
+    _sync(ref);
+  }
+
+  Future<void> _sync(Ref ref) async {
+    try {
+      final apiKey = await TokenStore.instance.loadSecret('claude-api-key');
+      final models = await ModelSyncService.getModels(apiKey);
+      if (mounted && models.isNotEmpty) state = models;
+    } catch (e) {
+      debugPrint('[AvailableModels] Sync failed: $e');
+    }
+  }
+
+  Future<void> forceRefresh() async {
+    try {
+      final apiKey = await TokenStore.instance.loadSecret('claude-api-key');
+      if (apiKey == null || apiKey.isEmpty) return;
+      final models = await ModelSyncService.forceRefresh(apiKey);
+      if (mounted && models.isNotEmpty) state = models;
+    } catch (e) {
+      debugPrint('[AvailableModels] Force refresh failed: $e');
+    }
+  }
+}
