@@ -2,7 +2,7 @@
 
 > A Flutter desktop app that unifies your calendars, captures meeting notes, and turns action items into tasks — with Claude AI built in.
 
-**Platform:** macOS · Windows &nbsp;|&nbsp; **Version:** 3.3.1 &nbsp;|&nbsp; **License:** MIT
+**Platform:** macOS · Windows &nbsp;|&nbsp; **Version:** 3.3.5 &nbsp;|&nbsp; **License:** MIT
 
 [![Release](https://img.shields.io/github/v/release/ankit2101/CalendarTask-Manager)](https://github.com/ankit2101/CalendarTask-Manager/releases)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-blue)](https://github.com/ankit2101/CalendarTask-Manager/releases)
@@ -99,6 +99,7 @@ Choose your Claude model in **Settings**:
 
 | Model | ID | Notes |
 |---|---|---|
+| Claude Fable 5 | `claude-fable-5` | Newest |
 | Claude Opus 4.8 | `claude-opus-4-8` | Most capable |
 | Claude Sonnet 4.6 | `claude-sonnet-4-6` | **Default** |
 | Claude Haiku 4.5 | `claude-haiku-4-5-20251001` | Fastest |
@@ -280,13 +281,15 @@ See the `docs/` directory for build and development instructions:
 
 See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 
-**Latest (v3.3.1):**
-- Outlook/Office365 calendars no longer go blank on refresh — last-good events retained on failure, 60 s receive timeout for large feeds
-- Refresh keeps showing events while fetching; transient failures no longer surface as a full-screen error
-- Smarter retry on HTTP 429 throttling, 5xx, and connection errors with `Retry-After`-aware backoff
+**Latest (v3.3.5):**
+- Claude API key now persists reliably across debug and ad-hoc release builds — no more silent key loss when switching build types
 
-**v3.3.0:**
-- Configurable auto-refresh interval in Settings (1 / 5 / 10 / 30 / 60 min)
+**v3.3.4:**
+- Added **Claude Fable 5** to the model picker
+- Automatic weekly model sync — model list updates from the API on startup
+
+**v3.3.3:**
+- Outlook fallback now works correctly in released builds — CI signing now preserves sandbox and Apple Events entitlements
 
 ---
 
