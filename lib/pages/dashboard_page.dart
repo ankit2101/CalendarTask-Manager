@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -8,6 +9,8 @@ import '../core/time_utils.dart';
 import '../models/account.dart';
 import '../models/calendar_event.dart';
 import '../providers/app_providers.dart';
+import '../services/ai/whisper_service.dart';
+import '../services/recording/recording_service.dart';
 import '../widgets/quick_note_dialog.dart';
 import '../widgets/timezone_picker_dialog.dart';
 
@@ -20,6 +23,17 @@ class DashboardPage extends ConsumerStatefulWidget {
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
   DateTime _selectedDate = DateTime.now();
+  bool _isRefreshing = false;
+
+  Future<void> _refresh() async {
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
+    try {
+      await ref.read(eventsProvider.notifier).refresh();
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
+  }
 
   DateTime _startOfDay(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -92,8 +106,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 ),
               const SizedBox(width: 8),
               ElevatedButton.icon(
-                onPressed: () => ref.read(eventsProvider.notifier).refresh(),
-                icon: const Icon(Icons.refresh, size: 16),
+                onPressed: _isRefreshing ? null : _refresh,
+                icon: _isRefreshing
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh, size: 16),
                 label: const Text('Refresh'),
               ),
             ],
@@ -198,7 +214,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   }
 }
 
-class _EventCard extends ConsumerWidget {
+class _EventCard extends ConsumerStatefulWidget {
   final NormalizedEvent event;
   final String status;
   final bool hasNote;
@@ -213,6 +229,118 @@ class _EventCard extends ConsumerWidget {
     required this.isDismissed,
   });
 
+  @override
+  ConsumerState<_EventCard> createState() => _EventCardState();
+}
+
+class _EventCardState extends ConsumerState<_EventCard> {
+  // _isRecording is derived from the global provider so it survives widget rebuilds.
+  bool get _isRecording => ref.read(activeRecordingEventIdProvider) == widget.event.id;
+  bool _isTranscribing = false;
+
+  Future<void> _toggleRecording(BuildContext context) async {
+    final activeId = ref.read(activeRecordingEventIdProvider);
+
+    if (_isRecording) {
+      // Stop recording — clear global provider first so the card UI updates immediately
+      ref.read(activeRecordingEventIdProvider.notifier).state = null;
+      setState(() => _isTranscribing = true);
+      String? wavPath;
+      try {
+        wavPath = await RecordingService.instance.stopRecording();
+        if (!mounted) { return; }
+        if (wavPath.isEmpty) { setState(() => _isTranscribing = false); return; }
+
+        final settings = ref.read(settingsProvider);
+        final model = WhisperModel.fromId(settings.whisperModelId);
+        final transcript = await WhisperService.instance.transcribeFile(wavPath: wavPath, model: model);
+
+        if (!mounted) return;
+        setState(() => _isTranscribing = false);
+        if (!context.mounted) return;
+        await showDialog(
+          context: context,
+          builder: (_) => QuickNoteDialog(
+            event: widget.event,
+            initialTranscription: transcript.isNotEmpty ? transcript : null,
+          ),
+        );
+      } catch (e) {
+        if (mounted) setState(() => _isTranscribing = false);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Recording error: $e')));
+        }
+      } finally {
+        // Clean up temp WAV regardless of success or failure
+        if (wavPath != null && wavPath.isNotEmpty) {
+          final settings = ref.read(settingsProvider);
+          if (!settings.keepAudioFiles) {
+            try { await File(wavPath).delete(); } catch (_) {}
+          }
+        }
+      }
+      return;
+    }
+
+    // Don't allow two events to record at once
+    if (activeId != null && activeId != widget.event.id) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Another meeting is already being recorded.')),
+      );
+      return;
+    }
+
+    // Ensure a Whisper model is ready before we commit to recording
+    final settings = ref.read(settingsProvider);
+    final model = WhisperModel.fromId(settings.whisperModelId);
+    if (!await WhisperService.instance.isModelDownloaded(model)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No Whisper model downloaded. Go to Settings → Recording and download a model first.'),
+          duration: Duration(seconds: 5),
+        ));
+      }
+      return;
+    }
+
+    final svc = RecordingService.instance;
+    final perm = await svc.getMicrophonePermission();
+    if (perm == 'denied') {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Microphone access denied. Enable it in System Settings > Privacy > Microphone.'),
+        ));
+      }
+      return;
+    }
+    if (perm == 'notDetermined') {
+      final granted = await svc.requestMicrophonePermission();
+      if (!granted) return;
+      // Issue 5: check mounted after the permission dialog await
+      if (!context.mounted) return;
+    }
+
+    // Issue 4: re-check no other card started while we were awaiting permissions
+    if (ref.read(activeRecordingEventIdProvider) != null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Another meeting is already being recorded.')),
+        );
+      }
+      return;
+    }
+
+    try {
+      final mode = settings.audioCaptureModeStr;
+      await svc.startRecording(mode);
+      ref.read(activeRecordingEventIdProvider.notifier).state = widget.event.id;
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to start recording: $e')));
+      }
+    }
+  }
+
   Widget _buildTimeDisplay(
     DateFormat timeFormat,
     DateTime Function() resolveStart,
@@ -226,14 +354,14 @@ class _EventCard extends ConsumerWidget {
 
     // Show source tz line only when there is no user override and the event has a source tz
     String? srcLine;
-    if (ov == null && event.timeZone != null) {
+    if (ov == null && widget.event.timeZone != null) {
       try {
         // Strip surrounding quotes that some ICS producers add (e.g. Outlook)
-        final cleanTz = event.timeZone!.trim().replaceAll('"', '');
+        final cleanTz = widget.event.timeZone!.trim().replaceAll('"', '');
         final ianaId = windowsToIana[cleanTz] ?? cleanTz;
         final location = tz.getLocation(ianaId);
-        final utcStart = DateTime.parse(event.start);
-        final utcEnd = DateTime.parse(event.end);
+        final utcStart = DateTime.parse(widget.event.start);
+        final utcEnd = DateTime.parse(widget.event.end);
         final srcStart = tz.TZDateTime.from(utcStart, location);
         final srcEnd = tz.TZDateTime.from(utcEnd, location);
         final srcAbbr = srcStart.timeZoneName;
@@ -269,8 +397,56 @@ class _EventCard extends ConsumerWidget {
 
   static const _statusDots = {'past': '\u25CB', 'active': '\u25CF', 'upcoming': '\u25CC'};
 
+  Widget _buildRecordButton(BuildContext context, {required bool isRecording}) {
+    if (_isTranscribing) {
+      return const Tooltip(
+        message: 'Transcribing…',
+        child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: CatppuccinMocha.teal)),
+      );
+    }
+    return Tooltip(
+      message: isRecording ? 'Stop recording' : 'Record meeting',
+      child: InkWell(
+        onTap: () => _toggleRecording(context),
+        borderRadius: BorderRadius.circular(4),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: (isRecording ? CatppuccinMocha.red : CatppuccinMocha.surface1).withValues(alpha: isRecording ? 0.15 : 1),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: (isRecording ? CatppuccinMocha.red : CatppuccinMocha.overlay0).withValues(alpha: 0.4)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isRecording)
+                _PulsingRecordDot()
+              else
+                const Icon(Icons.mic_outlined, size: 13, color: CatppuccinMocha.overlay0),
+              const SizedBox(width: 4),
+              Text(
+                isRecording ? 'Stop' : 'Record',
+                style: TextStyle(fontSize: 12, color: isRecording ? CatppuccinMocha.red : CatppuccinMocha.overlay0),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    // Aliases for the widget's immutable fields so existing build code is unchanged
+    final event = widget.event;
+    final status = widget.status;
+    final hasNote = widget.hasNote;
+    final isMissing = widget.isMissing;
+    final isDismissed = widget.isDismissed;
+
+    // Drive recording indicator from global provider — survives widget rebuilds.
+    final isRecording = ref.watch(activeRecordingEventIdProvider) == widget.event.id;
+
     final accounts = ref.watch(accountsProvider);
     final account = accounts.firstWhere(
       (a) => a.id == event.accountId,
@@ -518,6 +694,11 @@ class _EventCard extends ConsumerWidget {
                       child: Text(status == 'active' ? '+ Live Notes' : '+ Add Notes'),
                     ),
                   ],
+                  // Record button \u2014 active and upcoming meetings
+                  if (status == 'active' || status == 'upcoming') ...[
+                    const SizedBox(width: 8),
+                    _buildRecordButton(context, isRecording: isRecording),
+                  ],
                 ],
               ),
             ],
@@ -526,4 +707,38 @@ class _EventCard extends ConsumerWidget {
       ),
     );
   }
+}
+
+// \u2500\u2500\u2500 Pulsing dot for dashboard record button \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+class _PulsingRecordDot extends StatefulWidget {
+  @override
+  State<_PulsingRecordDot> createState() => _PulsingRecordDotState();
+}
+
+class _PulsingRecordDotState extends State<_PulsingRecordDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))
+      ..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _ctrl,
+    builder: (_, __) => Container(
+      width: 8, height: 8,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: CatppuccinMocha.red.withValues(alpha: 0.4 + _ctrl.value * 0.6),
+      ),
+    ),
+  );
 }

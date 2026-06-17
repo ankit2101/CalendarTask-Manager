@@ -9,7 +9,9 @@ import '../services/storage/app_database.dart';
 import '../services/calendar/calendar_manager.dart';
 import '../services/ai/claude_client.dart';
 import '../services/ai/model_sync_service.dart';
+import '../services/ai/whisper_service.dart';
 import '../services/auth/token_store.dart';
+import '../services/recording/recording_service.dart';
 
 // Settings
 final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((ref) {
@@ -278,6 +280,16 @@ class DismissedMeetingsNotifier extends StateNotifier<Set<String>> {
 
   void reload() => _load();
 }
+
+// ─── Recording ───────────────────────────────────────────────────────────────
+
+final recordingServiceProvider = Provider<RecordingService>((_) => RecordingService.instance);
+final whisperServiceProvider = Provider<WhisperService>((_) => WhisperService.instance);
+
+/// Which event is currently being recorded (null = idle).
+final activeRecordingEventIdProvider = StateProvider<String?>((ref) => null);
+
+// ─── Sync watcher ─────────────────────────────────────────────────────────────
 
 // Sync watcher — listens for external file changes (e.g. iCloud/Dropbox sync)
 // and reloads all providers so the UI reflects the updated data automatically.
