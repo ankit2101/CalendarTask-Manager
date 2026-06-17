@@ -241,12 +241,14 @@ class RecordingBridge: NSObject {
         SCShareableContent.getExcludingDesktopWindows(false, onScreenWindowsOnly: false) { [weak self] content, error in
             guard let self = self else { return }
             if let error = error {
+                self.teardownAfterFailedScreenCaptureStart()
                 DispatchQueue.main.async {
                     result(FlutterError(code: "SC_ERROR", message: error.localizedDescription, details: nil))
                 }
                 return
             }
             guard let display = content?.displays.first else {
+                self.teardownAfterFailedScreenCaptureStart()
                 DispatchQueue.main.async {
                     result(FlutterError(code: "NO_DISPLAY", message: "No display found for capture", details: nil))
                 }
@@ -273,10 +275,32 @@ class RecordingBridge: NSObject {
                     result(nil)
                 }
             } catch {
+                self.teardownAfterFailedScreenCaptureStart()
                 DispatchQueue.main.async {
                     result(FlutterError(code: "SC_START_ERROR", message: error.localizedDescription, details: nil))
                 }
             }
+        }
+    }
+
+    /// Tears down the mic engine and sys-audio file left running when a ScreenCaptureKit
+    /// start fails after the mic engine was already started. Without this the mic tap keeps
+    /// recording with `isRecording == false`, so it can never be stopped from the UI and the
+    /// next start leaks another engine.
+    @available(macOS 13.0, *)
+    private func teardownAfterFailedScreenCaptureStart() {
+        stopMicEngine()
+        let mic = micFilePath
+        micFilePath = nil
+        if let mic = mic { try? FileManager.default.removeItem(atPath: mic) }
+        scStreamHolder = nil
+        scDelegateHolder = nil
+        let sys = sysFilePath
+        sysFilePath = nil
+        // Close the sys file on the serial queue (consistent with the write path), then remove it.
+        sysFileQueue.async { [weak self] in
+            self?.sysFile = nil
+            if let sys = sys { try? FileManager.default.removeItem(atPath: sys) }
         }
     }
 
