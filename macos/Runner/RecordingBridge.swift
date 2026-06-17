@@ -375,7 +375,9 @@ class RecordingBridge: NSObject {
 
             // Configure params
             var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
-            params.language = UnsafePointer(strdup("auto"))
+            let langPtr = strdup("auto")
+            defer { free(langPtr) }
+            params.language = UnsafePointer(langPtr)
             params.translate = false
             params.print_progress = false
             params.print_realtime = false

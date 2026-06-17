@@ -11,6 +11,7 @@ import '../models/calendar_event.dart';
 import '../models/todo_task.dart';
 import '../providers/app_providers.dart';
 import '../services/ai/whisper_service.dart';
+import '../services/recording/recording_service.dart';
 
 class QuickNoteDialog extends ConsumerStatefulWidget {
   final NormalizedEvent event;
@@ -32,6 +33,9 @@ class QuickNoteDialog extends ConsumerStatefulWidget {
 
 class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
   final _noteController = TextEditingController();
+  // Stored controllers so build() never leaks them and user edits survive rebuilds.
+  final _transcriptController = TextEditingController();
+  final _summaryController = TextEditingController();
   bool _isExtracting = false;
   bool _isSaving = false;
   bool _isSummarizing = false;
@@ -70,6 +74,8 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
       _noteController.text = widget.existingRecord!.note;
       _transcription = widget.existingRecord!.transcription;
       _aiSummary = widget.existingRecord!.aiSummary;
+      _transcriptController.text = _transcription ?? '';
+      _summaryController.text = _aiSummary ?? '';
       _actionItems = widget.existingRecord!.actionItems
           .map((a) => _EditableActionItem.fromActionItem(a))
           .toList();
@@ -84,7 +90,13 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
   @override
   void dispose() {
     _noteController.dispose();
+    _transcriptController.dispose();
+    _summaryController.dispose();
     _elapsedTimer?.cancel();
+    // Issue 9: stop the engine if the dialog is closed mid-recording
+    if (_recState == _RecordingState.recording) {
+      RecordingService.instance.stopRecording().catchError((_) => '');
+    }
     for (final item in _actionItems) {
       item.controller.dispose();
     }
@@ -248,11 +260,9 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
 
     try {
       final text = await whisper.transcribeFile(wavPath: wavPath, model: model);
-      if (!settings.keepAudioFiles) {
-        try { await File(wavPath).delete(); } catch (_) {}
-      }
       setState(() {
         _transcription = text.isEmpty ? null : text;
+        _transcriptController.text = _transcription ?? '';
         _recState = _RecordingState.done;
       });
       if (_transcription != null) await _summarizeTranscript();
@@ -260,6 +270,11 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
       if (mounted) {
         setState(() => _recState = _RecordingState.idle);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Transcription failed: $e')));
+      }
+    } finally {
+      // Always clean up the temp WAV — even when transcription throws
+      if (!settings.keepAudioFiles) {
+        try { await File(wavPath).delete(); } catch (_) {}
       }
     }
   }
@@ -277,6 +292,7 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
       for (final item in _actionItems) item.controller.dispose();
       setState(() {
         _aiSummary = result.summary;
+        _summaryController.text = _aiSummary ?? '';
         _actionItems = result.actionItems.map((a) => _EditableActionItem.fromActionItem(a)).toList();
         _selectedActionIds
           ..clear()
@@ -426,7 +442,7 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
                         expanded: _transcriptExpanded,
                         onToggle: () => setState(() => _transcriptExpanded = !_transcriptExpanded),
                         child: TextField(
-                          controller: TextEditingController(text: _transcription),
+                          controller: _transcriptController,
                           maxLines: null,
                           readOnly: false,
                           onChanged: (v) => _transcription = v,
@@ -473,7 +489,7 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
                                 ),
                               )
                             : TextField(
-                                controller: TextEditingController(text: _aiSummary ?? ''),
+                                controller: _summaryController,
                                 maxLines: null,
                                 onChanged: (v) => _aiSummary = v,
                                 style: const TextStyle(color: CatppuccinMocha.text, fontSize: 13),

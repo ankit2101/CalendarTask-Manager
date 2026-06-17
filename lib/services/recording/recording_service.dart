@@ -11,8 +11,13 @@ class RecordingService {
       _ch.invokeMethod('startRecording', {'mode': mode});
 
   /// Stops recording and returns the path to the WAV file.
-  Future<String> stopRecording() async =>
-      await _ch.invokeMethod<String>('stopRecording') ?? '';
+  Future<String> stopRecording() async {
+    try {
+      return await _ch.invokeMethod<String>('stopRecording') ?? '';
+    } on PlatformException catch (e) {
+      throw Exception('Stop recording failed: ${e.message ?? e.code}');
+    }
+  }
 
   /// Runs whisper-cli subprocess and returns the transcript text.
   Future<String> transcribeAudio({

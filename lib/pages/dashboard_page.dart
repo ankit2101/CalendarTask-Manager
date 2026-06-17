@@ -234,8 +234,8 @@ class _EventCard extends ConsumerStatefulWidget {
 }
 
 class _EventCardState extends ConsumerState<_EventCard> {
-  // Local recording state (recording this specific card)
-  bool _isRecording = false;
+  // _isRecording is derived from the global provider so it survives widget rebuilds.
+  bool get _isRecording => ref.read(activeRecordingEventIdProvider) == widget.event.id;
   bool _isTranscribing = false;
 
   bool get _isWithin30Min {
@@ -250,20 +250,17 @@ class _EventCardState extends ConsumerState<_EventCard> {
     final activeId = ref.read(activeRecordingEventIdProvider);
 
     if (_isRecording) {
-      // Stop recording
-      setState(() { _isRecording = false; _isTranscribing = true; });
+      // Stop recording — clear global provider first so the card UI updates immediately
       ref.read(activeRecordingEventIdProvider.notifier).state = null;
+      setState(() => _isTranscribing = true);
+      String? wavPath;
       try {
-        final wavPath = await RecordingService.instance.stopRecording();
+        wavPath = await RecordingService.instance.stopRecording();
         if (wavPath.isEmpty) { setState(() => _isTranscribing = false); return; }
 
         final settings = ref.read(settingsProvider);
         final model = WhisperModel.fromId(settings.whisperModelId);
         final transcript = await WhisperService.instance.transcribeFile(wavPath: wavPath, model: model);
-
-        if (!settings.keepAudioFiles) {
-          try { await File(wavPath).delete(); } catch (_) {}
-        }
 
         setState(() => _isTranscribing = false);
         if (!context.mounted) return;
@@ -278,6 +275,14 @@ class _EventCardState extends ConsumerState<_EventCard> {
         setState(() => _isTranscribing = false);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Recording error: $e')));
+        }
+      } finally {
+        // Clean up temp WAV regardless of success or failure
+        if (wavPath != null && wavPath.isNotEmpty) {
+          final settings = ref.read(settingsProvider);
+          if (!settings.keepAudioFiles) {
+            try { await File(wavPath).delete(); } catch (_) {}
+          }
         }
       }
       return;
@@ -317,13 +322,24 @@ class _EventCardState extends ConsumerState<_EventCard> {
     if (perm == 'notDetermined') {
       final granted = await svc.requestMicrophonePermission();
       if (!granted) return;
+      // Issue 5: check mounted after the permission dialog await
+      if (!context.mounted) return;
+    }
+
+    // Issue 4: re-check no other card started while we were awaiting permissions
+    if (ref.read(activeRecordingEventIdProvider) != null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Another meeting is already being recorded.')),
+        );
+      }
+      return;
     }
 
     try {
       final mode = settings.audioCaptureModeStr;
       await svc.startRecording(mode);
       ref.read(activeRecordingEventIdProvider.notifier).state = widget.event.id;
-      setState(() => _isRecording = true);
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to start recording: $e')));
@@ -387,7 +403,7 @@ class _EventCardState extends ConsumerState<_EventCard> {
 
   static const _statusDots = {'past': '\u25CB', 'active': '\u25CF', 'upcoming': '\u25CC'};
 
-  Widget _buildRecordButton(BuildContext context) {
+  Widget _buildRecordButton(BuildContext context, {required bool isRecording}) {
     if (_isTranscribing) {
       return const Tooltip(
         message: 'Transcribing…',
@@ -395,28 +411,28 @@ class _EventCardState extends ConsumerState<_EventCard> {
       );
     }
     return Tooltip(
-      message: _isRecording ? 'Stop recording' : 'Record meeting',
+      message: isRecording ? 'Stop recording' : 'Record meeting',
       child: InkWell(
         onTap: () => _toggleRecording(context),
         borderRadius: BorderRadius.circular(4),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
-            color: (_isRecording ? CatppuccinMocha.red : CatppuccinMocha.surface1).withValues(alpha: _isRecording ? 0.15 : 1),
+            color: (isRecording ? CatppuccinMocha.red : CatppuccinMocha.surface1).withValues(alpha: isRecording ? 0.15 : 1),
             borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: (_isRecording ? CatppuccinMocha.red : CatppuccinMocha.overlay0).withValues(alpha: 0.4)),
+            border: Border.all(color: (isRecording ? CatppuccinMocha.red : CatppuccinMocha.overlay0).withValues(alpha: 0.4)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (_isRecording)
+              if (isRecording)
                 _PulsingRecordDot()
               else
                 const Icon(Icons.mic_outlined, size: 13, color: CatppuccinMocha.overlay0),
               const SizedBox(width: 4),
               Text(
-                _isRecording ? 'Stop' : 'Record',
-                style: TextStyle(fontSize: 12, color: _isRecording ? CatppuccinMocha.red : CatppuccinMocha.overlay0),
+                isRecording ? 'Stop' : 'Record',
+                style: TextStyle(fontSize: 12, color: isRecording ? CatppuccinMocha.red : CatppuccinMocha.overlay0),
               ),
             ],
           ),
@@ -433,6 +449,9 @@ class _EventCardState extends ConsumerState<_EventCard> {
     final hasNote = widget.hasNote;
     final isMissing = widget.isMissing;
     final isDismissed = widget.isDismissed;
+
+    // Drive recording indicator from global provider — survives widget rebuilds.
+    final isRecording = ref.watch(activeRecordingEventIdProvider) == widget.event.id;
 
     final accounts = ref.watch(accountsProvider);
     final account = accounts.firstWhere(
@@ -684,7 +703,7 @@ class _EventCardState extends ConsumerState<_EventCard> {
                   // Record button \u2014 active and upcoming meetings
                   if (status == 'active' || status == 'upcoming') ...[
                     const SizedBox(width: 8),
-                    _buildRecordButton(context),
+                    _buildRecordButton(context, isRecording: isRecording),
                   ],
                 ],
               ),

@@ -44,12 +44,20 @@ class WhisperService {
   final _progress = StreamController<WhisperProgress>.broadcast();
   Stream<WhisperProgress> get progressStream => _progress.stream;
 
+  // Queryable download state so Settings page can sync on init.
+  bool get isDownloading => _isDownloading;
+  double get downloadProgress => _downloadProgress;
+  bool _isDownloading = false;
+  double _downloadProgress = 0;
+
+  CancelToken? _cancelToken;
+
   static const _modelBaseUrl =
       'https://huggingface.co/ggerganov/whisper.cpp/resolve/main';
 
   final _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 30),
-    receiveTimeout: const Duration(minutes: 10),
+    receiveTimeout: const Duration(seconds: 120),
   ));
 
   // ──────────────────────────────────────────────
@@ -83,21 +91,46 @@ class WhisperService {
     }
 
     final url = '$_modelBaseUrl/${model.fileName}';
+    _cancelToken = CancelToken();
+    _isDownloading = true;
+    _downloadProgress = 0;
     _progress.add(WhisperProgress(WhisperStatus.downloadingModel,
         downloadProgress: 0, message: 'Downloading ${model.label}…'));
 
-    await _dio.download(
-      url,
-      path,
-      onReceiveProgress: (received, total) {
-        if (total > 0) {
-          _progress.add(WhisperProgress(WhisperStatus.downloadingModel,
-              downloadProgress: received / total,
-              message: 'Downloading ${model.label}… ${(received / 1e6).toStringAsFixed(0)}/${(total / 1e6).toStringAsFixed(0)} MB'));
-        }
-      },
-    );
+    try {
+      await _dio.download(
+        url,
+        path,
+        cancelToken: _cancelToken,
+        onReceiveProgress: (received, total) {
+          if (total > 0) {
+            _downloadProgress = received / total;
+            _progress.add(WhisperProgress(WhisperStatus.downloadingModel,
+                downloadProgress: _downloadProgress,
+                message: 'Downloading ${model.label}… ${(received / 1e6).toStringAsFixed(0)}/${(total / 1e6).toStringAsFixed(0)} MB'));
+          }
+        },
+      );
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) {
+        // Clean up partial file on cancel
+        final f = File(path);
+        if (await f.exists()) await f.delete();
+        _isDownloading = false;
+        _progress.add(const WhisperProgress(WhisperStatus.idle, message: 'Download cancelled'));
+        throw Exception('Download cancelled');
+      }
+      rethrow;
+    } finally {
+      _isDownloading = false;
+      _cancelToken = null;
+    }
     return path;
+  }
+
+  /// Cancels an in-progress model download.
+  void cancelDownload() {
+    _cancelToken?.cancel('User cancelled');
   }
 
   Future<bool> isModelDownloaded(WhisperModel model) async {

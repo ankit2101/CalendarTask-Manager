@@ -289,12 +289,6 @@ final whisperServiceProvider = Provider<WhisperService>((_) => WhisperService.in
 /// Which event is currently being recorded (null = idle).
 final activeRecordingEventIdProvider = StateProvider<String?>((ref) => null);
 
-enum RecordingUIState { idle, recording, transcribing, done }
-final recordingUIStateProvider = StateProvider<RecordingUIState>((ref) => RecordingUIState.idle);
-
-/// Completed transcription results keyed by eventId, pending dialog pickup.
-final pendingTranscriptionProvider = StateProvider<Map<String, String>>((ref) => {});
-
 // ─── Sync watcher ─────────────────────────────────────────────────────────────
 
 // Sync watcher — listens for external file changes (e.g. iCloud/Dropbox sync)

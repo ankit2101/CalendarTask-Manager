@@ -504,16 +504,20 @@ class _RecordingSettingsSectionState extends ConsumerState<_RecordingSettingsSec
   void initState() {
     super.initState();
     _checkModels();
+    // Sync with any download already in progress before this widget was mounted.
+    _downloading = WhisperService.instance.isDownloading;
+    _downloadProgress = WhisperService.instance.downloadProgress;
     _progressSub = WhisperService.instance.progressStream.listen((p) {
       if (!mounted) return;
-      setState(() {
-        if (p.status == WhisperStatus.downloadingModel) {
+      if (p.status == WhisperStatus.downloadingModel) {
+        setState(() {
           _downloading = true;
           _downloadProgress = p.downloadProgress ?? 0;
-        } else if (p.status == WhisperStatus.done || p.status == WhisperStatus.error) {
-          _downloading = false;
-        }
-      });
+        });
+      } else if (p.status == WhisperStatus.done || p.status == WhisperStatus.error) {
+        // mounted is checked at the top — safe to call setState here
+        if (mounted) setState(() => _downloading = false);
+      }
     });
   }
 
@@ -588,6 +592,15 @@ class _RecordingSettingsSectionState extends ConsumerState<_RecordingSettingsSec
             'Screen Recording permission will be requested on first use.',
             style: TextStyle(fontSize: 12, color: CatppuccinMocha.overlay0),
           ),
+          const SizedBox(height: 4),
+          const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(Icons.info_outline, size: 13, color: CatppuccinMocha.yellow),
+            SizedBox(width: 4),
+            Expanded(child: Text(
+              'ScreenCaptureKit captures audio from ALL applications on your Mac, not only meeting apps. This audio is processed entirely on-device.',
+              style: TextStyle(fontSize: 12, color: CatppuccinMocha.yellow),
+            )),
+          ]),
         ],
         if (captureMode == 'blackhole') ...[
           const SizedBox(height: 6),
@@ -650,10 +663,22 @@ class _RecordingSettingsSectionState extends ConsumerState<_RecordingSettingsSec
             color: CatppuccinMocha.teal,
           ),
           const SizedBox(height: 4),
-          Text(
-            _downloadProgress > 0 ? 'Downloading… ${(_downloadProgress * 100).round()}%' : 'Downloading…',
-            style: const TextStyle(fontSize: 12, color: CatppuccinMocha.overlay0),
-          ),
+          Row(children: [
+            Expanded(
+              child: Text(
+                _downloadProgress > 0 ? 'Downloading… ${(_downloadProgress * 100).round()}%' : 'Downloading…',
+                style: const TextStyle(fontSize: 12, color: CatppuccinMocha.overlay0),
+              ),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), minimumSize: Size.zero),
+              onPressed: () {
+                WhisperService.instance.cancelDownload();
+                setState(() => _downloading = false);
+              },
+              child: const Text('Cancel', style: TextStyle(fontSize: 12, color: CatppuccinMocha.red)),
+            ),
+          ]),
         ] else
           Row(children: [
             if (!(_modelDownloaded[selectedModel] ?? false))
