@@ -1,8 +1,8 @@
 # CalendarTask Manager
 
-> A Flutter desktop app that unifies your calendars, captures meeting notes, and turns action items into tasks — with Claude AI built in.
+> A Flutter desktop app that unifies your calendars, records and transcribes meetings on-device, captures notes, and turns action items into tasks — with Claude AI built in.
 
-**Platform:** macOS · Windows &nbsp;|&nbsp; **Version:** 3.3.5 &nbsp;|&nbsp; **License:** MIT
+**Platform:** macOS · Windows &nbsp;|&nbsp; **Version:** 4.0.0 &nbsp;|&nbsp; **License:** MIT
 
 [![Release](https://img.shields.io/github/v/release/ankit2101/CalendarTask-Manager)](https://github.com/ankit2101/CalendarTask-Manager/releases)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-blue)](https://github.com/ankit2101/CalendarTask-Manager/releases)
@@ -13,9 +13,9 @@
 
 ## What is this?
 
-CalendarTask Manager is a **native desktop app** for macOS and Windows that connects your calendars via ICS/Webcal feeds, lets you take meeting notes with AI-extracted action items powered by the **Anthropic Claude API**, and manages your to-do list — all in one place, with all data stored **locally and encrypted**.
+CalendarTask Manager is a **native desktop app** for macOS and Windows that connects your calendars via ICS/Webcal feeds, **records meetings and transcribes them on-device with Whisper**, lets you take notes with AI-extracted action items powered by the **Anthropic Claude API**, and manages your to-do list — all in one place, with all data stored **locally and encrypted**.
 
-**No subscription. No cloud sync required. No OAuth logins.** Just paste an ICS URL and go.
+**No subscription. No cloud sync required. No OAuth logins.** Audio is transcribed **locally** — it never leaves your machine. Just paste an ICS URL and go.
 
 ---
 
@@ -71,6 +71,17 @@ Grab the latest release from [**Releases →**](https://github.com/ankit2101/Cal
 - **Outlook for Mac fallback** — on corporate laptops where a security agent (e.g. Microsoft Defender for Endpoint, Zscaler) blocks anonymous ICS requests, the app automatically reads events from the locally installed Outlook app instead via AppleScript; no configuration needed
 - **Dismiss** past meeting reminders with the × button
 
+### 🎙️ Meeting Recording & On-Device Transcription
+
+- **Record** button on active and upcoming meeting cards (and inside the note dialog) with a live elapsed timer and pulsing indicator
+- **Captures both sides of the conversation** — your microphone (AVAudioEngine) **and** system audio from the meeting app (ScreenCaptureKit on macOS 13+), mixed into a single track
+- **Fully on-device transcription** via a bundled **Whisper** (`whisper.cpp`) engine — no external binary, no network call, **audio never leaves your machine**
+- **Choose your model** in Settings — Tiny, Base, Small, Medium, or Large-v3; models download once from Hugging Face and run locally thereafter
+- **Auto-summary** — when transcription finishes, Claude generates a concise meeting summary and extracts action items
+- **Mic-only fallback** — if system-audio capture is unavailable (permission denied or macOS < 13), recording continues with the microphone alone
+- Transcript and summary are saved with the meeting and editable before saving
+- Audio files are deleted after transcription by default (keep them via **Settings → Recording**)
+
 ### ✏️ Meeting Notes
 
 - **+ Add Notes** button on every past meeting
@@ -93,7 +104,7 @@ Grab the latest release from [**Releases →**](https://github.com/ankit2101/Cal
 
 ### 🤖 Claude AI Integration
 
-Uses the [Anthropic Claude API](https://console.anthropic.com/) to extract action items from meeting notes.
+Uses the [Anthropic Claude API](https://console.anthropic.com/) to summarize meetings and extract action items from your transcript, AI summary, and notes combined.
 
 Choose your Claude model in **Settings**:
 
@@ -117,16 +128,18 @@ Choose your Claude model in **Settings**:
 - **Secure credential storage** — your Claude API key lives in the OS keychain (**macOS Keychain** / **Windows Credential Manager**), never in a plaintext file
 - **SSRF protection** — calendar URLs are validated to block private-network addresses (localhost, RFC 1918 ranges, link-local)
 - **Request limits** — ICS feeds are capped at 10 MB; HTTP connections time out at 15 s connect / 60 s receive; recurring event expansion is capped to prevent CPU abuse
-- **AI consent** — a one-time dialog informs you before any meeting content is sent to Claude
+- **On-device transcription** — meeting audio is transcribed locally with bundled Whisper; the recording itself **never leaves your machine** and is deleted after transcription by default
+- **AI consent** — a one-time dialog informs you before any meeting content (transcript, summary, or notes) is sent to Claude
 - **No telemetry** — no analytics, no crash reporting, no data leaves the device except Claude API calls you explicitly trigger
 
 ---
 
 ## Requirements
 
-- **macOS** 10.13+ (Apple Silicon and Intel)
+- **macOS** 10.13+ (Apple Silicon and Intel) — system-audio capture during recording requires **macOS 13+** (ScreenCaptureKit); older versions fall back to microphone-only
 - **Windows** 10+ (64-bit)
-- A [Claude API key](https://console.anthropic.com/) for AI features (optional — the rest of the app works without one)
+- A [Claude API key](https://console.anthropic.com/) for AI features (optional — calendar, recording, and transcription all work without one)
+- ~150 MB–3 GB free disk for the Whisper model you choose (downloaded once, on demand)
 
 ---
 
@@ -218,6 +231,8 @@ Both files must be present in the same folder on every machine. Once the key fil
 | Data persistence | AES-256-GCM encrypted JSON file |
 | Credential storage | OS Keychain (macOS) / Credential Manager (Windows) via flutter_secure_storage |
 | AI | Anthropic Claude API (Opus 4.8 / Sonnet 4.6 / Haiku 4.5) |
+| Transcription | On-device **Whisper** (`whisper.cpp` via bundled `whisper.xcframework`) |
+| Audio capture | AVAudioEngine (microphone) + ScreenCaptureKit (system audio, macOS 13+) via `RecordingBridge.swift` |
 | ICS parsing | Custom RFC 5545 parser with full TZID, RRULE, EXDATE support |
 | Outlook fallback | NSAppleScript via Flutter method channel (`OutlookBridge.swift`) |
 | Timezones | IANA tz database (`timezone` package) + Windows↔IANA map |
@@ -243,7 +258,9 @@ lib/
 ├── providers/
 │   └── app_providers.dart          # Riverpod providers
 ├── services/
-│   ├── ai/claude_client.dart       # Anthropic API client (timeouts, email scrub)
+│   ├── ai/claude_client.dart       # Anthropic API client (summary + action items, email scrub)
+│   ├── ai/whisper_service.dart     # Whisper model download/management + transcription
+│   ├── recording/recording_service.dart  # Method-channel wrapper around RecordingBridge
 │   ├── auth/token_store.dart       # Secure credential storage (Keychain + fallback)
 │   ├── calendar/
 │   │   ├── calendar_manager.dart   # Aggregates ICS feeds + Outlook fallback + deduplication
@@ -261,7 +278,9 @@ lib/
 │   └── theme/                      # Catppuccin Mocha theme
 macos/Runner/
 ├── OutlookBridge.swift             # NSAppleScript method channel (Outlook fallback)
-└── MainFlutterWindow.swift         # Registers OutlookBridge on startup
+├── RecordingBridge.swift           # Mic + system-audio capture, mixing, Whisper transcription
+└── MainFlutterWindow.swift         # Registers Outlook + Recording bridges on startup
+macos/whisper.xcframework/          # Bundled on-device Whisper engine (macOS universal slice)
 tools/
 ├── recover_data.dart               # CLI tool to decrypt and inspect the data file
 └── reencrypt_data.dart             # CLI tool to re-encrypt the data file with a new key
@@ -281,15 +300,19 @@ See the `docs/` directory for build and development instructions:
 
 See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 
-**Latest (v3.3.5):**
+**Latest (v4.0.0):**
+- **Meeting recording** — capture microphone + system audio (ScreenCaptureKit on macOS 13+) directly from meeting cards
+- **On-device Whisper transcription** — bundled `whisper.xcframework` transcribes locally; audio never leaves your machine
+- **Whisper model management** — download/delete Tiny → Large-v3 models from Settings → Recording
+- **Auto-summary** — Claude summarizes the transcript and extracts action items automatically
+- **Richer action-item extraction** — combines transcript, summary, and notes
+
+**v3.3.5:**
 - Claude API key now persists reliably across debug and ad-hoc release builds — no more silent key loss when switching build types
 
 **v3.3.4:**
 - Added **Claude Fable 5** to the model picker
 - Automatic weekly model sync — model list updates from the API on startup
-
-**v3.3.3:**
-- Outlook fallback now works correctly in released builds — CI signing now preserves sandbox and Apple Events entitlements
 
 ---
 
