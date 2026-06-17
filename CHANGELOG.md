@@ -4,6 +4,22 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [4.0.0] — 2026-06-17
+
+### Added
+- **Meeting recording** — a **Record** button on active and upcoming meeting cards (and inside the note dialog) captures meeting audio with a live elapsed timer and pulsing indicator. Captures both the **microphone** (AVAudioEngine) and **system audio** (ScreenCaptureKit, macOS 13+), mixed into a single 16 kHz mono track via the new native `RecordingBridge.swift`.
+- **On-device transcription** — a bundled **Whisper** engine (`whisper.cpp` via `whisper.xcframework`, universal arm64+x86_64) transcribes recordings fully on-device through `whisper_init_from_file` / `whisper_full`. No external binary and no network call for inference — **audio never leaves the machine**.
+- **Whisper model management** — `WhisperService` downloads ggml models (Tiny → Large-v3) from Hugging Face on first use, validating the completed download before committing it; download/delete and audio-capture mode live under **Settings → Recording**.
+- **Auto-summary** — when transcription completes, Claude generates a concise meeting summary and extracts action items automatically.
+- **Richer action-item extraction** — **Extract Action Items** now sends the transcript, AI summary, and meeting notes together for more complete results, with user-provided content delimited to guard against prompt injection.
+- **Refresh spinner** — the dashboard Refresh button shows an inline spinner while fetching.
+
+### Changed
+- App version bumped to **4.0.0** to mark the recording/transcription feature.
+- Microphone (`NSMicrophoneUsageDescription`) and screen-recording (`NSScreenRecordingUsageDescription`) usage descriptions and the `com.apple.security.device.audio-input` entitlement added across debug/release/ad-hoc configurations.
+
+---
+
 ## [3.3.5] — 2026-06-16
 
 ### Fixed
