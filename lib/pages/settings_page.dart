@@ -541,7 +541,8 @@ class _RecordingSettingsSectionState extends ConsumerState<_RecordingSettingsSec
       await WhisperService.instance.ensureModel(model);
       await _checkModels();
     } catch (e) {
-      if (mounted) {
+      // Don't show an error snackbar when the user explicitly cancelled.
+      if (mounted && !e.toString().contains('cancelled')) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Download failed: $e')),
         );

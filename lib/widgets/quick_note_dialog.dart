@@ -200,6 +200,7 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
       if (perm == 'notDetermined') {
         final granted = await svc.requestMicrophonePermission();
         if (!granted) return;
+        if (!mounted) return;
       }
 
       // Try preferred mode, fall back to mic-only on failure

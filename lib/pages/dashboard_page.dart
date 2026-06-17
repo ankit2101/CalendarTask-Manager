@@ -238,14 +238,6 @@ class _EventCardState extends ConsumerState<_EventCard> {
   bool get _isRecording => ref.read(activeRecordingEventIdProvider) == widget.event.id;
   bool _isTranscribing = false;
 
-  bool get _isWithin30Min {
-    try {
-      final start = DateTime.parse(widget.event.start).toLocal();
-      final diff = start.difference(DateTime.now());
-      return diff.inMinutes <= 30 && diff.inMinutes >= 0;
-    } catch (_) { return false; }
-  }
-
   Future<void> _toggleRecording(BuildContext context) async {
     final activeId = ref.read(activeRecordingEventIdProvider);
 
@@ -256,12 +248,14 @@ class _EventCardState extends ConsumerState<_EventCard> {
       String? wavPath;
       try {
         wavPath = await RecordingService.instance.stopRecording();
+        if (!mounted) { return; }
         if (wavPath.isEmpty) { setState(() => _isTranscribing = false); return; }
 
         final settings = ref.read(settingsProvider);
         final model = WhisperModel.fromId(settings.whisperModelId);
         final transcript = await WhisperService.instance.transcribeFile(wavPath: wavPath, model: model);
 
+        if (!mounted) return;
         setState(() => _isTranscribing = false);
         if (!context.mounted) return;
         await showDialog(
@@ -272,7 +266,7 @@ class _EventCardState extends ConsumerState<_EventCard> {
           ),
         );
       } catch (e) {
-        setState(() => _isTranscribing = false);
+        if (mounted) setState(() => _isTranscribing = false);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Recording error: $e')));
         }

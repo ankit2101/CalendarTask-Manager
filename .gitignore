@@ -20,3 +20,9 @@ dist/
 
 # macOS system files
 .DS_Store
+
+# whisper.xcframework — keep only the macOS slice; dSYMs are not needed in the repo
+macos/whisper.xcframework/ios-*/
+macos/whisper.xcframework/tvos-*/
+macos/whisper.xcframework/xros-*/
+macos/whisper.xcframework/*/dSYMs/

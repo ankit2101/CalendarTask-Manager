@@ -23,6 +23,9 @@ class RecordingBridge: NSObject {
     private var captureMode: String = "screenCapture"
     private var isRecording = false
     private let targetSampleRate: Double = 16000
+    // Serial queue for all sysFile reads/writes — prevents race between the
+    // SCStream sample-handler thread (writes) and the stop path (nil-out).
+    private let sysFileQueue = DispatchQueue(label: "com.calendartask.sysfile")
 
     init(messenger: FlutterBinaryMessenger) {
         super.init()
@@ -286,14 +289,18 @@ class RecordingBridge: NSObject {
             status.pointee = done ? .noDataNow : .haveData
             return done ? nil : pcm
         }
-        if err == nil, out.frameLength > 0 { try? sysFile?.write(from: out) }
+        if err == nil, out.frameLength > 0 {
+            sysFileQueue.async { [weak self] in try? self?.sysFile?.write(from: out) }
+        }
     }
 
     @available(macOS 13.0, *)
     private func stopScreenCaptureRecording(result: @escaping FlutterResult) {
         stopMicEngine()
         let mic = micFilePath; micFilePath = nil
-        let sys = sysFilePath; sysFilePath = nil; sysFile = nil
+        let sys = sysFilePath; sysFilePath = nil
+        // Do NOT nil sysFile here — the SCStream callback thread may still be mid-write.
+        // We nil it inside the serial sysFileQueue after stopCapture drains all pending writes.
 
         let stream = scStreamHolder as? SCStream
         scStreamHolder = nil
@@ -301,14 +308,20 @@ class RecordingBridge: NSObject {
 
         if let stream = stream {
             stream.stopCapture { [weak self] _ in
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let out = self?.mixFiles(path1: mic, path2: sys)
-                    if let mic = mic { try? FileManager.default.removeItem(atPath: mic) }
-                    if let sys = sys { try? FileManager.default.removeItem(atPath: sys) }
-                    DispatchQueue.main.async { result(out ?? mic ?? "") }
+                guard let self = self else { return }
+                // Dispatch onto sysFileQueue so we run after any in-flight writes complete.
+                self.sysFileQueue.async {
+                    self.sysFile = nil  // safe to close now — no more writes pending
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let out = self.mixFiles(path1: mic, path2: sys)
+                        if let mic = mic { try? FileManager.default.removeItem(atPath: mic) }
+                        if let sys = sys { try? FileManager.default.removeItem(atPath: sys) }
+                        DispatchQueue.main.async { result(out ?? mic ?? "") }
+                    }
                 }
             }
         } else {
+            sysFileQueue.async { [weak self] in self?.sysFile = nil }
             result(mic ?? "")
         }
     }
@@ -330,8 +343,8 @@ class RecordingBridge: NSObject {
               let b2 = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: len2),
               let out = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: total) else { return path1 }
 
-        (try? f1.read(into: b1)) == nil ? () : ()
-        (try? f2.read(into: b2)) == nil ? () : ()
+        try? f1.read(into: b1)
+        try? f2.read(into: b2)
         out.frameLength = total
 
         guard let ch1 = b1.floatChannelData?[0],
