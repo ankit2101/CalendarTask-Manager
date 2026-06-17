@@ -13,9 +13,11 @@
 
 ## What is this?
 
-CalendarTask Manager is a **native desktop app** for macOS and Windows that connects your calendars via ICS/Webcal feeds, **records meetings and transcribes them on-device with Whisper**, lets you take notes with AI-extracted action items powered by the **Anthropic Claude API**, and manages your to-do list — all in one place, with all data stored **locally and encrypted**.
+**The problem.** Back-to-back meetings scatter your day across calendars you can't see in one place, and the decisions and follow-ups made in those meetings evaporate the moment they end — leaving you to reconstruct action items from memory. The tools that promise to fix this (AI notetakers, meeting-bot transcribers) ship your conversations to someone else's cloud, which is a non-starter for confidential or regulated work and usually comes with a per-seat subscription.
 
-**No subscription. No cloud sync required. No OAuth logins.** Audio is transcribed **locally** — it never leaves your machine. Just paste an ICS URL and go.
+**The solution.** CalendarTask Manager is a **native desktop app** for macOS and Windows that pulls all your calendars into a single daily view, **records and transcribes your meetings entirely on-device with Whisper**, and uses the **Anthropic Claude API** to summarize each conversation and turn it into tracked action items — then manages those tasks to completion. Everything is stored **locally and encrypted**; the recording never leaves your machine, and only the text you explicitly approve is ever sent to Claude.
+
+**The benefit.** You walk out of every meeting with an accurate transcript, a summary, and a to-do list already populated — without trusting a third-party bot, paying a subscription, or wiring up OAuth. **No subscription. No cloud sync required. No meeting bots.** Just paste an ICS URL and go.
 
 ---
 
