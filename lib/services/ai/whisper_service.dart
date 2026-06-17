@@ -90,7 +90,12 @@ class WhisperService {
       await file.delete(); // remove partial download
     }
 
+    // Download to a temp path and only rename into place once the file is
+    // complete and validated — so an interrupted download never leaves a
+    // partial file at the real path that would pass isModelDownloaded() and
+    // later fail whisper_init_from_file().
     final url = '$_modelBaseUrl/${model.fileName}';
+    final partPath = '$path.part';
     _cancelToken = CancelToken();
     _isDownloading = true;
     _downloadProgress = 0;
@@ -100,7 +105,7 @@ class WhisperService {
     try {
       await _dio.download(
         url,
-        path,
+        partPath,
         cancelToken: _cancelToken,
         onReceiveProgress: (received, total) {
           if (total > 0) {
@@ -111,21 +116,40 @@ class WhisperService {
           }
         },
       );
+
+      // Validate the completed download against the model's expected size
+      // (allow a 10% margin since sizeMb is approximate) before committing it.
+      final partFile = File(partPath);
+      final downloadedSize = await partFile.length();
+      final minBytes = (model.sizeMb * 1024 * 1024 * 0.9).round();
+      if (downloadedSize < minBytes) {
+        await partFile.delete();
+        throw Exception(
+            'Downloaded model is incomplete (${(downloadedSize / 1e6).toStringAsFixed(0)} MB, expected ~${model.sizeMb} MB)');
+      }
+      await partFile.rename(path);
     } on DioException catch (e) {
+      await _deleteIfExists(partPath);
       if (CancelToken.isCancel(e)) {
-        // Clean up partial file on cancel
-        final f = File(path);
-        if (await f.exists()) await f.delete();
         _isDownloading = false;
         _progress.add(const WhisperProgress(WhisperStatus.idle, message: 'Download cancelled'));
         throw Exception('Download cancelled');
       }
+      rethrow;
+    } catch (_) {
+      // Validation/rename failure — leave nothing partial behind.
+      await _deleteIfExists(partPath);
       rethrow;
     } finally {
       _isDownloading = false;
       _cancelToken = null;
     }
     return path;
+  }
+
+  Future<void> _deleteIfExists(String path) async {
+    final f = File(path);
+    if (await f.exists()) await f.delete();
   }
 
   /// Cancels an in-progress model download.
