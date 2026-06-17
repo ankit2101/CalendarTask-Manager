@@ -112,6 +112,8 @@ class MeetingRecord {
   final String note;
   final List<ActionItem> actionItems;
   final String savedAt;
+  final String? transcription;  // raw Whisper output
+  final String? aiSummary;      // Claude-generated summary
 
   MeetingRecord({
     required this.eventId,
@@ -120,7 +122,25 @@ class MeetingRecord {
     required this.note,
     this.actionItems = const [],
     required this.savedAt,
+    this.transcription,
+    this.aiSummary,
   });
+
+  MeetingRecord copyWith({
+    String? note,
+    List<ActionItem>? actionItems,
+    String? transcription,
+    String? aiSummary,
+  }) => MeetingRecord(
+    eventId: eventId,
+    title: title,
+    date: date,
+    note: note ?? this.note,
+    actionItems: actionItems ?? this.actionItems,
+    savedAt: savedAt,
+    transcription: transcription ?? this.transcription,
+    aiSummary: aiSummary ?? this.aiSummary,
+  );
 
   Map<String, dynamic> toJson() => {
     'eventId': eventId,
@@ -129,6 +149,8 @@ class MeetingRecord {
     'note': note,
     'actionItems': actionItems.map((a) => a.toJson()).toList(),
     'savedAt': savedAt,
+    'transcription': transcription,
+    'aiSummary': aiSummary,
   };
 
   factory MeetingRecord.fromJson(Map<String, dynamic> json) => MeetingRecord(
@@ -140,5 +162,7 @@ class MeetingRecord {
         ?.map((a) => ActionItem.fromJson(a as Map<String, dynamic>))
         .toList() ?? [],
     savedAt: json['savedAt'] as String,
+    transcription: json['transcription'] as String?,
+    aiSummary: json['aiSummary'] as String?,
   );
 }

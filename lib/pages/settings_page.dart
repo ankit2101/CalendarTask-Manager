@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
@@ -7,6 +8,7 @@ import 'package:launch_at_startup/launch_at_startup.dart';
 import '../core/theme/catppuccin_mocha.dart';
 import '../providers/app_providers.dart';
 import '../models/settings.dart';
+import '../services/ai/whisper_service.dart';
 import '../services/storage/app_database.dart';
 import '../services/auth/token_store.dart';
 
@@ -178,6 +180,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               },
             );
           }),
+          const SizedBox(height: 24),
+          const Divider(),
+          const SizedBox(height: 16),
+
+          // Recording
+          const _RecordingSettingsSection(),
           const SizedBox(height: 24),
           const Divider(),
           const SizedBox(height: 16),
@@ -475,6 +483,268 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _RecordingSettingsSection extends ConsumerStatefulWidget {
+  const _RecordingSettingsSection();
+
+  @override
+  ConsumerState<_RecordingSettingsSection> createState() => _RecordingSettingsSectionState();
+}
+
+class _RecordingSettingsSectionState extends ConsumerState<_RecordingSettingsSection> {
+  Map<WhisperModel, bool> _modelDownloaded = {};
+  bool _downloading = false;
+  double _downloadProgress = 0;
+  StreamSubscription<WhisperProgress>? _progressSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkModels();
+    _progressSub = WhisperService.instance.progressStream.listen((p) {
+      if (!mounted) return;
+      setState(() {
+        if (p.status == WhisperStatus.downloadingModel) {
+          _downloading = true;
+          _downloadProgress = p.downloadProgress ?? 0;
+        } else if (p.status == WhisperStatus.done || p.status == WhisperStatus.error) {
+          _downloading = false;
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _progressSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkModels() async {
+    final results = <WhisperModel, bool>{};
+    for (final m in WhisperModel.values) {
+      results[m] = await WhisperService.instance.isModelDownloaded(m);
+    }
+    if (mounted) setState(() => _modelDownloaded = results);
+  }
+
+  Future<void> _downloadModel(WhisperModel model) async {
+    setState(() { _downloading = true; _downloadProgress = 0; });
+    try {
+      await WhisperService.instance.ensureModel(model);
+      await _checkModels();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Download failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  Future<void> _deleteModel(WhisperModel model) async {
+    await WhisperService.instance.deleteModel(model);
+    await _checkModels();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = ref.watch(settingsProvider);
+
+    final captureMode = settings.audioCaptureModeStr;
+    final selectedModel = WhisperModel.values.firstWhere(
+      (m) => m.id == settings.whisperModelId,
+      orElse: () => WhisperModel.base,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Recording', style: TextStyle(fontWeight: FontWeight.w600, color: CatppuccinMocha.text)),
+        const SizedBox(height: 4),
+        const Text(
+          'Configure audio capture and on-device Whisper transcription for meetings.',
+          style: TextStyle(fontSize: 13, color: CatppuccinMocha.overlay0),
+        ),
+        const SizedBox(height: 16),
+
+        // Audio Capture Mode
+        const Text('Audio Capture Mode', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: CatppuccinMocha.subtext1)),
+        const SizedBox(height: 8),
+        _AudioModeSelector(
+          selected: captureMode,
+          onChanged: (val) {
+            ref.read(settingsProvider.notifier).update(settings.copyWith(audioCaptureModeStr: val));
+          },
+        ),
+        if (captureMode == 'screenCapture') ...[
+          const SizedBox(height: 6),
+          const Text(
+            'Screen Recording permission will be requested on first use.',
+            style: TextStyle(fontSize: 12, color: CatppuccinMocha.overlay0),
+          ),
+        ],
+        if (captureMode == 'blackhole') ...[
+          const SizedBox(height: 6),
+          const Text(
+            'Install BlackHole 2ch via: brew install blackhole-2ch',
+            style: TextStyle(fontSize: 12, color: CatppuccinMocha.overlay0),
+          ),
+        ],
+        const SizedBox(height: 16),
+
+        // Whisper engine status
+        const Text('Whisper Engine', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: CatppuccinMocha.subtext1)),
+        const SizedBox(height: 6),
+        const Row(children: [
+          Icon(Icons.check_circle, size: 14, color: CatppuccinMocha.green),
+          SizedBox(width: 6),
+          Text('Bundled (whisper.xcframework v1.9.0)', style: TextStyle(fontSize: 12, color: CatppuccinMocha.text)),
+        ]),
+        const SizedBox(height: 16),
+
+        // Whisper Model
+        const Text('Whisper Model', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: CatppuccinMocha.subtext1)),
+        const SizedBox(height: 4),
+        const Text('Larger models are more accurate but slower and use more disk.', style: TextStyle(fontSize: 12, color: CatppuccinMocha.overlay0)),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<WhisperModel>(
+          value: selectedModel,
+          dropdownColor: CatppuccinMocha.surface0,
+          style: const TextStyle(color: CatppuccinMocha.text, fontSize: 14),
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: CatppuccinMocha.surface0,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: CatppuccinMocha.surface2)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: CatppuccinMocha.surface2)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: CatppuccinMocha.mauve)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+          items: WhisperModel.values.map((m) {
+            final isDownloaded = _modelDownloaded[m] ?? false;
+            return DropdownMenuItem(
+              value: m,
+              child: Row(children: [
+                Icon(isDownloaded ? Icons.download_done : Icons.cloud_download_outlined, size: 14, color: isDownloaded ? CatppuccinMocha.green : CatppuccinMocha.overlay0),
+                const SizedBox(width: 8),
+                Text(m.label, style: const TextStyle(color: CatppuccinMocha.text)),
+              ]),
+            );
+          }).toList(),
+          onChanged: (val) {
+            if (val == null) return;
+            ref.read(settingsProvider.notifier).update(settings.copyWith(whisperModelId: val.id));
+          },
+        ),
+        const SizedBox(height: 10),
+        if (_downloading) ...[
+          LinearProgressIndicator(
+            value: _downloadProgress > 0 ? _downloadProgress : null,
+            backgroundColor: CatppuccinMocha.surface0,
+            color: CatppuccinMocha.teal,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _downloadProgress > 0 ? 'Downloading… ${(_downloadProgress * 100).round()}%' : 'Downloading…',
+            style: const TextStyle(fontSize: 12, color: CatppuccinMocha.overlay0),
+          ),
+        ] else
+          Row(children: [
+            if (!(_modelDownloaded[selectedModel] ?? false))
+              ElevatedButton.icon(
+                onPressed: () => _downloadModel(selectedModel),
+                icon: const Icon(Icons.download, size: 14),
+                label: Text('Download ${selectedModel.label}'),
+                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+              )
+            else ...[
+              Row(children: [
+                const Icon(Icons.check_circle, size: 14, color: CatppuccinMocha.green),
+                const SizedBox(width: 6),
+                const Text('Downloaded', style: TextStyle(fontSize: 13, color: CatppuccinMocha.green)),
+              ]),
+              const SizedBox(width: 12),
+              TextButton(
+                style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), minimumSize: Size.zero),
+                onPressed: () => _deleteModel(selectedModel),
+                child: const Text('Delete', style: TextStyle(fontSize: 12, color: CatppuccinMocha.red)),
+              ),
+            ],
+          ]),
+        const SizedBox(height: 16),
+
+        // Keep audio files
+        Row(children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [
+            Text('Keep Audio Files', style: TextStyle(fontSize: 13, color: CatppuccinMocha.text)),
+            SizedBox(height: 2),
+            Text('Retain .wav files after transcription (uses disk space)', style: TextStyle(fontSize: 12, color: CatppuccinMocha.overlay0)),
+          ])),
+          Switch(
+            value: settings.keepAudioFiles,
+            onChanged: (val) {
+              ref.read(settingsProvider.notifier).update(settings.copyWith(keepAudioFiles: val));
+            },
+          ),
+        ]),
+      ],
+    );
+  }
+}
+
+class _AudioModeSelector extends StatelessWidget {
+  const _AudioModeSelector({required this.selected, required this.onChanged});
+
+  final String selected;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    const modes = [
+      ('screenCapture', 'ScreenCaptureKit', Icons.screen_share_outlined),
+      ('mic', 'Mic Only', Icons.mic_outlined),
+      ('blackhole', 'BlackHole', Icons.settings_input_component_outlined),
+    ];
+
+    return Row(
+      children: modes.map((entry) {
+        final (id, label, icon) = entry;
+        final isSelected = selected == id;
+        return Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: InkWell(
+            onTap: () => onChanged(id),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: isSelected ? CatppuccinMocha.teal.withValues(alpha: 0.15) : CatppuccinMocha.surface0,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: isSelected ? CatppuccinMocha.teal : CatppuccinMocha.surface2),
+              ),
+              child: Row(children: [
+                Icon(icon, size: 14, color: isSelected ? CatppuccinMocha.teal : CatppuccinMocha.overlay0),
+                const SizedBox(width: 6),
+                Text(label, style: TextStyle(fontSize: 13, color: isSelected ? CatppuccinMocha.teal : CatppuccinMocha.subtext1, fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal)),
+                if (id == 'screenCapture') ...[
+                  const SizedBox(width: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(color: CatppuccinMocha.teal.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(3)),
+                    child: const Text('★', style: TextStyle(fontSize: 10, color: CatppuccinMocha.teal)),
+                  ),
+                ],
+              ]),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

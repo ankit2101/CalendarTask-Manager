@@ -54,6 +54,10 @@ class AppSettings {
   final String globalShortcutToggleApp;
   final String claudeModelId;
   final int autoRefreshIntervalMinutes;
+  // Recording
+  final String audioCaptureModeStr; // 'screenCapture' | 'mic' | 'blackhole'
+  final String whisperModelId;       // WhisperModel.id
+  final bool keepAudioFiles;
 
   const AppSettings({
     this.pollingIntervalSeconds = 30,
@@ -65,6 +69,9 @@ class AppSettings {
     this.globalShortcutToggleApp = 'CommandOrControl+Shift+M',
     this.claudeModelId = kDefaultClaudeModelId,
     this.autoRefreshIntervalMinutes = 15,
+    this.audioCaptureModeStr = 'screenCapture',
+    this.whisperModelId = 'base',
+    this.keepAudioFiles = false,
   });
 
   AppSettings copyWith({
@@ -73,6 +80,7 @@ class AppSettings {
     bool? showDockIcon, String? globalShortcutQuickNote,
     String? globalShortcutToggleApp, String? claudeModelId,
     int? autoRefreshIntervalMinutes,
+    String? audioCaptureModeStr, String? whisperModelId, bool? keepAudioFiles,
   }) => AppSettings(
     pollingIntervalSeconds: pollingIntervalSeconds ?? this.pollingIntervalSeconds,
     promptDelayMinutes: promptDelayMinutes ?? this.promptDelayMinutes,
@@ -83,6 +91,9 @@ class AppSettings {
     globalShortcutToggleApp: globalShortcutToggleApp ?? this.globalShortcutToggleApp,
     claudeModelId: claudeModelId ?? this.claudeModelId,
     autoRefreshIntervalMinutes: autoRefreshIntervalMinutes ?? this.autoRefreshIntervalMinutes,
+    audioCaptureModeStr: audioCaptureModeStr ?? this.audioCaptureModeStr,
+    whisperModelId: whisperModelId ?? this.whisperModelId,
+    keepAudioFiles: keepAudioFiles ?? this.keepAudioFiles,
   );
 
   Map<String, dynamic> toJson() => {
@@ -95,6 +106,9 @@ class AppSettings {
     'globalShortcutToggleApp': globalShortcutToggleApp,
     'claudeModelId': claudeModelId,
     'autoRefreshIntervalMinutes': autoRefreshIntervalMinutes,
+    'audioCaptureModeStr': audioCaptureModeStr,
+    'whisperModelId': whisperModelId,
+    'keepAudioFiles': keepAudioFiles,
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
@@ -107,5 +121,8 @@ class AppSettings {
     globalShortcutToggleApp: json['globalShortcutToggleApp'] as String? ?? 'CommandOrControl+Shift+M',
     claudeModelId: json['claudeModelId'] as String? ?? kDefaultClaudeModelId,
     autoRefreshIntervalMinutes: json['autoRefreshIntervalMinutes'] as int? ?? 15,
+    audioCaptureModeStr: json['audioCaptureModeStr'] as String? ?? 'screenCapture',
+    whisperModelId: json['whisperModelId'] as String? ?? 'base',
+    keepAudioFiles: json['keepAudioFiles'] as bool? ?? false,
   );
 }

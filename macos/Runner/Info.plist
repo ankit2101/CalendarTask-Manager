@@ -30,5 +30,9 @@
 	<string>NSApplication</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>CalendarTask Manager reads your Outlook calendar to show meetings when your work calendar feed is unavailable.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>CalendarTask Manager records your microphone during meetings to generate transcripts.</string>
+	<key>NSScreenRecordingUsageDescription</key>
+	<string>CalendarTask Manager captures system audio during meetings (ScreenCaptureKit mode) to include remote participants in the transcript.</string>
 </dict>
 </plist>
