@@ -19,7 +19,8 @@ class RecordingService {
     }
   }
 
-  /// Runs whisper-cli subprocess and returns the transcript text.
+  /// Transcribes a WAV file natively via the bundled whisper.xcframework and
+  /// returns the transcript text. [binaryPath] is unused (kept for API compatibility).
   Future<String> transcribeAudio({
     required String wavPath,
     required String modelPath,

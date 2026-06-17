@@ -178,7 +178,11 @@ class RecordingBridge: NSObject {
         }
 
         let engine = AVAudioEngine()
-        let inputUnit = engine.inputNode.audioUnit!
+        guard let inputUnit = engine.inputNode.audioUnit else {
+            // No audio unit available — fall back to mic-only rather than crashing.
+            startMicEngineOnly(result: result)
+            return
+        }
         var dev = deviceId
         let status = AudioUnitSetProperty(
             inputUnit,
