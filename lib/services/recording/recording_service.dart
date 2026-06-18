@@ -32,6 +32,33 @@ class RecordingService {
         'binaryPath': binaryPath,
       }) ?? '';
 
+  /// Runs the bundled local LLM (llama.xcframework) over [prompt] using the
+  /// GGUF model at [modelPath] and returns the generated text. Throws a
+  /// PlatformException with code 'LLM_UNAVAILABLE' when the framework is not
+  /// linked into the build, so callers can fall back to cloud extraction.
+  Future<String> runLocalLlm({
+    required String modelPath,
+    required String prompt,
+    int maxTokens = 1024,
+  }) async =>
+      await _ch.invokeMethod<String>('runLocalLlm', {
+        'modelPath': modelPath,
+        'prompt': prompt,
+        'maxTokens': maxTokens,
+      }) ?? '';
+
+  /// Whether the local-LLM native backend (llama.xcframework) is linked into
+  /// this build. Returns false on older builds that predate the method.
+  Future<bool> isLocalLlmAvailable() async {
+    try {
+      return await _ch.invokeMethod<bool>('isLocalLlmAvailable') ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   /// Removes com.apple.quarantine xattr from a downloaded binary.
   Future<void> removeQuarantine(String path) =>
       _ch.invokeMethod('removeQuarantine', {'path': path});

@@ -8,7 +8,9 @@ import '../models/account.dart';
 import '../services/storage/app_database.dart';
 import '../services/calendar/calendar_manager.dart';
 import '../services/ai/claude_client.dart';
+import '../services/ai/local_llm_service.dart';
 import '../services/ai/model_sync_service.dart';
+import '../services/ai/task_extractor.dart';
 import '../services/ai/whisper_service.dart';
 import '../services/auth/token_store.dart';
 import '../services/recording/recording_service.dart';
@@ -254,6 +256,22 @@ final claudeClientProvider = FutureProvider<ClaudeClient>((ref) async {
   if (key != null && key.isNotEmpty) client.setApiKey(key);
   client.setModel(settings.claudeModelId);
   return client;
+});
+
+// On-device LLM extractor — shares the singleton so model downloads tracked by
+// the Settings page and the extraction calls use the same instance.
+final localLlmServiceProvider = Provider<LocalLlmService>((_) => LocalLlmService.instance);
+
+// Resolves to the active task extractor based on the user's chosen mode. Both
+// branches implement [TaskExtractor], so call sites are backend-agnostic.
+final taskExtractorProvider = FutureProvider<TaskExtractor>((ref) async {
+  final settings = ref.watch(settingsProvider);
+  if (settings.taskExtractionModeStr == 'local') {
+    final svc = LocalLlmService.instance;
+    svc.model = LocalLlmModel.fromId(settings.localLlmModelId);
+    return svc;
+  }
+  return ref.watch(claudeClientProvider.future);
 });
 
 // Dismissed meetings — events the user has chosen not to be prompted about

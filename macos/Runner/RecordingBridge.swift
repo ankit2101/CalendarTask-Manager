@@ -4,6 +4,9 @@ import Cocoa
 import FlutterMacOS
 import ScreenCaptureKit
 import whisper
+#if canImport(llama)
+import llama
+#endif
 
 /// Bridges Flutter to native macOS audio APIs for meeting recording and Whisper transcription.
 class RecordingBridge: NSObject {
@@ -51,6 +54,15 @@ class RecordingBridge: NSObject {
                 result(FlutterError(code: "ARGS", message: "Missing arguments", details: nil)); return
             }
             transcribeAudio(wavPath: wavPath, modelPath: modelPath, binaryPath: binaryPath, result: result)
+        case "isLocalLlmAvailable":
+            result(Self.localLlmAvailable)
+        case "runLocalLlm":
+            guard let modelPath = args["modelPath"] as? String,
+                  let prompt = args["prompt"] as? String else {
+                result(FlutterError(code: "ARGS", message: "Missing arguments", details: nil)); return
+            }
+            runLocalLlm(modelPath: modelPath, prompt: prompt,
+                        maxTokens: args["maxTokens"] as? Int ?? 1024, result: result)
         case "removeQuarantine":
             removeQuarantine(path: args["path"] as? String ?? "", result: result)
         case "getMicrophonePermission":
@@ -391,6 +403,34 @@ class RecordingBridge: NSObject {
         return outPath
     }
 
+    // MARK: - Local LLM (llama.xcframework)
+
+    /// True only when llama.xcframework is linked into the build. Flutter queries
+    /// this so the UI can steer the user to cloud extraction otherwise.
+    #if canImport(llama)
+    static let localLlmAvailable = true
+    #else
+    static let localLlmAvailable = false
+    #endif
+
+    private func runLocalLlm(modelPath: String, prompt: String, maxTokens: Int, result: @escaping FlutterResult) {
+        #if canImport(llama)
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let text = try LlamaRunner.generate(modelPath: modelPath, prompt: prompt, maxTokens: maxTokens)
+                DispatchQueue.main.async { result(text) }
+            } catch {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "LLM_ERROR", message: error.localizedDescription, details: nil))
+                }
+            }
+        }
+        #else
+        result(FlutterError(code: "LLM_UNAVAILABLE",
+                            message: "llama.xcframework is not linked into this build", details: nil))
+        #endif
+    }
+
     // MARK: - Transcription
 
     /// Transcribes a 16kHz mono WAV file using the bundled whisper.xcframework.
@@ -634,3 +674,138 @@ private class SCDelegateImpl: NSObject, SCStreamDelegate, SCStreamOutput {
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {}
 }
+
+// MARK: - On-device LLM inference via llama.cpp
+//
+// The llama framework is pulled in automatically by CocoaPods (`pod 'llama'` in
+// macos/Podfile downloads the prebuilt xcframework during `flutter build macos`),
+// so no manual setup is required. The `#if canImport(llama)` gate is a safety net:
+// if the pod is ever removed, the app still builds and reports the engine as
+// unavailable rather than failing to compile. The C API targets the llama.cpp
+// version pinned in macos/llama.podspec — re-check include/llama.h when bumping it.
+
+#if canImport(llama)
+enum LlamaError: LocalizedError {
+    case modelLoad(String)
+    case contextInit
+    case tokenize
+    case decode(Int32)
+
+    var errorDescription: String? {
+        switch self {
+        case .modelLoad(let p): return "Failed to load model: \(p)"
+        case .contextInit: return "Failed to create llama context"
+        case .tokenize: return "Failed to tokenize prompt"
+        case .decode(let c): return "llama_decode failed (code \(c))"
+        }
+    }
+}
+
+enum LlamaRunner {
+    /// Runs greedy generation over [prompt] and returns the decoded text.
+    /// Loads and frees the model per call — extraction is infrequent, so we
+    /// favour predictable memory over keeping a multi-GB model resident.
+    static func generate(modelPath: String, prompt: String, maxTokens: Int) throws -> String {
+        llama_backend_init()
+        defer { llama_backend_free() }
+
+        // Load model — offload all layers to the Metal GPU when available.
+        var mparams = llama_model_default_params()
+        mparams.n_gpu_layers = 99
+        guard let model = llama_model_load_from_file(modelPath, mparams) else {
+            throw LlamaError.modelLoad(modelPath)
+        }
+        defer { llama_model_free(model) }
+
+        let vocab = llama_model_get_vocab(model)
+
+        // Context sized for a meeting transcript plus the generated answer.
+        let nCtx: UInt32 = 8192
+        var cparams = llama_context_default_params()
+        cparams.n_ctx = nCtx
+        cparams.n_batch = 512
+        cparams.n_threads = Int32(max(1, ProcessInfo.processInfo.processorCount - 1))
+        cparams.n_threads_batch = cparams.n_threads
+        guard let ctx = llama_init_from_model(model, cparams) else {
+            throw LlamaError.contextInit
+        }
+        defer { llama_free(ctx) }
+
+        // Wrap the prompt with the model's built-in chat template so role
+        // markers match what the model was trained on; fall back to ChatML.
+        let formatted = applyChatTemplate(model: model, userPrompt: prompt)
+
+        // Tokenize (with special tokens / template markers parsed).
+        var tokens = [llama_token](repeating: 0, count: formatted.utf8.count + 16)
+        let nPrompt = formatted.withCString { cstr in
+            llama_tokenize(vocab, cstr, Int32(strlen(cstr)),
+                           &tokens, Int32(tokens.count),
+                           /*add_special*/ true, /*parse_special*/ true)
+        }
+        guard nPrompt > 0 else { throw LlamaError.tokenize }
+        tokens = Array(tokens.prefix(Int(nPrompt)))
+
+        // Evaluate the prompt.
+        var batch = tokens.withUnsafeMutableBufferPointer { buf in
+            llama_batch_get_one(buf.baseAddress, Int32(buf.count))
+        }
+        guard llama_decode(ctx, batch) == 0 else { throw LlamaError.decode(-1) }
+
+        let nVocab = Int(llama_vocab_n_tokens(vocab))
+        var output = ""
+        var generated = 0
+        var nPast = nPrompt
+
+        while generated < maxTokens && Int(nPast) < Int(nCtx) {
+            // Greedy: pick the highest-logit token from the last position.
+            guard let logits = llama_get_logits_ith(ctx, -1) else { break }
+            var best = 0
+            var bestVal = logits[0]
+            for i in 1..<nVocab where logits[i] > bestVal {
+                bestVal = logits[i]; best = i
+            }
+            let next = llama_token(best)
+            if llama_vocab_is_eog(vocab, next) { break }
+
+            output += tokenToString(vocab: vocab, token: next)
+            generated += 1
+
+            var one = next
+            batch = withUnsafeMutablePointer(to: &one) { p in
+                llama_batch_get_one(p, 1)
+            }
+            guard llama_decode(ctx, batch) == 0 else { break }
+            nPast += 1
+        }
+
+        return output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Detokenizes a single token to its UTF-8 piece.
+    private static func tokenToString(vocab: OpaquePointer?, token: llama_token) -> String {
+        var buf = [CChar](repeating: 0, count: 256)
+        let n = llama_token_to_piece(vocab, token, &buf, Int32(buf.count), 0, /*special*/ false)
+        guard n > 0 else { return "" }
+        return String(decoding: buf.prefix(Int(n)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }
+
+    /// Applies the model's chat template to a single user turn, asking for the
+    /// assistant prefix. Falls back to ChatML if the model carries no template.
+    private static func applyChatTemplate(model: OpaquePointer, userPrompt: String) -> String {
+        let tmpl = llama_model_chat_template(model, nil) // nil = default template
+        let role = strdup("user")
+        let content = strdup(userPrompt)
+        defer { free(role); free(content) }
+
+        var msg = llama_chat_message(role: role, content: content)
+        var buf = [CChar](repeating: 0, count: userPrompt.utf8.count + 512)
+        let n = llama_chat_apply_template(tmpl, &msg, 1, /*add_assistant*/ true,
+                                          &buf, Int32(buf.count))
+        if n > 0 {
+            return String(decoding: buf.prefix(Int(n)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+        }
+        // Fallback: ChatML (correct for the default Qwen2.5 model).
+        return "<|im_start|>user\n\(userPrompt)<|im_end|>\n<|im_start|>assistant\n"
+    }
+}
+#endif
