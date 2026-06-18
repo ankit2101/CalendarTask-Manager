@@ -745,11 +745,14 @@ enum LlamaRunner {
         guard nPrompt > 0 else { throw LlamaError.tokenize }
         tokens = Array(tokens.prefix(Int(nPrompt)))
 
-        // Evaluate the prompt.
-        var batch = tokens.withUnsafeMutableBufferPointer { buf in
-            llama_batch_get_one(buf.baseAddress, Int32(buf.count))
+        // Evaluate the prompt. llama_batch_get_one stores buf.baseAddress, which
+        // is only valid inside withUnsafeMutableBufferPointer — so the decode must
+        // happen within that scope, not on an escaped copy of the batch struct.
+        let promptOk = tokens.withUnsafeMutableBufferPointer { buf -> Bool in
+            let batch = llama_batch_get_one(buf.baseAddress, Int32(buf.count))
+            return llama_decode(ctx, batch) == 0
         }
-        guard llama_decode(ctx, batch) == 0 else { throw LlamaError.decode(-1) }
+        guard promptOk else { throw LlamaError.decode(-1) }
 
         let nVocab = Int(llama_vocab_n_tokens(vocab))
         var output = ""
@@ -771,10 +774,11 @@ enum LlamaRunner {
             generated += 1
 
             var one = next
-            batch = withUnsafeMutablePointer(to: &one) { p in
-                llama_batch_get_one(p, 1)
+            let stepOk = withUnsafeMutablePointer(to: &one) { p -> Bool in
+                let batch = llama_batch_get_one(p, 1)
+                return llama_decode(ctx, batch) == 0
             }
-            guard llama_decode(ctx, batch) == 0 else { break }
+            guard stepOk else { break }
             nPast += 1
         }
 

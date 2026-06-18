@@ -6,7 +6,8 @@
 #
 # To upgrade llama.cpp: pick a tag from https://github.com/ggml-org/llama.cpp/releases
 # that ships a `llama-<tag>-xcframework.zip` asset, bump `version` and the URL
-# below, then re-check macos/Runner/LlamaBridge.swift against that tag's llama.h.
+# below, then re-check macos/Runner/RecordingBridge.swift (LlamaRunner) against
+# that tag's llama.h.
 Pod::Spec.new do |s|
   s.name             = 'llama'
   # CocoaPods requires a semver-style version; this encodes llama.cpp build b9692.
