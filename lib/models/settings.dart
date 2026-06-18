@@ -58,6 +58,9 @@ class AppSettings {
   final String audioCaptureModeStr; // 'screenCapture' | 'mic' | 'blackhole'
   final String whisperModelId;       // WhisperModel.id
   final bool keepAudioFiles;
+  // Task extraction
+  final String taskExtractionModeStr; // 'cloud' (Claude API) | 'local' (on-device LLM)
+  final String localLlmModelId;       // LocalLlmModel.id
 
   const AppSettings({
     this.pollingIntervalSeconds = 30,
@@ -72,6 +75,8 @@ class AppSettings {
     this.audioCaptureModeStr = 'screenCapture',
     this.whisperModelId = 'base',
     this.keepAudioFiles = false,
+    this.taskExtractionModeStr = 'cloud',
+    this.localLlmModelId = 'qwen2.5-1.5b',
   });
 
   AppSettings copyWith({
@@ -81,6 +86,7 @@ class AppSettings {
     String? globalShortcutToggleApp, String? claudeModelId,
     int? autoRefreshIntervalMinutes,
     String? audioCaptureModeStr, String? whisperModelId, bool? keepAudioFiles,
+    String? taskExtractionModeStr, String? localLlmModelId,
   }) => AppSettings(
     pollingIntervalSeconds: pollingIntervalSeconds ?? this.pollingIntervalSeconds,
     promptDelayMinutes: promptDelayMinutes ?? this.promptDelayMinutes,
@@ -94,6 +100,8 @@ class AppSettings {
     audioCaptureModeStr: audioCaptureModeStr ?? this.audioCaptureModeStr,
     whisperModelId: whisperModelId ?? this.whisperModelId,
     keepAudioFiles: keepAudioFiles ?? this.keepAudioFiles,
+    taskExtractionModeStr: taskExtractionModeStr ?? this.taskExtractionModeStr,
+    localLlmModelId: localLlmModelId ?? this.localLlmModelId,
   );
 
   Map<String, dynamic> toJson() => {
@@ -109,6 +117,8 @@ class AppSettings {
     'audioCaptureModeStr': audioCaptureModeStr,
     'whisperModelId': whisperModelId,
     'keepAudioFiles': keepAudioFiles,
+    'taskExtractionModeStr': taskExtractionModeStr,
+    'localLlmModelId': localLlmModelId,
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
@@ -124,5 +134,7 @@ class AppSettings {
     audioCaptureModeStr: json['audioCaptureModeStr'] as String? ?? 'screenCapture',
     whisperModelId: json['whisperModelId'] as String? ?? 'base',
     keepAudioFiles: json['keepAudioFiles'] as bool? ?? false,
+    taskExtractionModeStr: json['taskExtractionModeStr'] as String? ?? 'cloud',
+    localLlmModelId: json['localLlmModelId'] as String? ?? 'qwen2.5-1.5b',
   );
 }

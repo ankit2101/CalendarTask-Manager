@@ -8,6 +8,7 @@ import 'package:launch_at_startup/launch_at_startup.dart';
 import '../core/theme/catppuccin_mocha.dart';
 import '../providers/app_providers.dart';
 import '../models/settings.dart';
+import '../services/ai/local_llm_service.dart';
 import '../services/ai/whisper_service.dart';
 import '../services/storage/app_database.dart';
 import '../services/auth/token_store.dart';
@@ -108,78 +109,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           const Divider(),
           const SizedBox(height: 16),
 
-          // Claude Model
-          const Text('Claude Model', style: TextStyle(fontWeight: FontWeight.w600, color: CatppuccinMocha.text)),
-          const SizedBox(height: 4),
-          const Text(
-            'Select the model used for AI-powered action item extraction.',
-            style: TextStyle(fontSize: 13, color: CatppuccinMocha.overlay0),
-          ),
-          const SizedBox(height: 8),
-          Builder(builder: (context) {
-            final models = ref.watch(availableModelsProvider);
-            final validId = models.any((m) => m.id == settings.claudeModelId)
-                ? settings.claudeModelId
-                : kDefaultClaudeModelId;
-            return DropdownButtonFormField<String>(
-              value: validId,
-              dropdownColor: CatppuccinMocha.surface0,
-              style: const TextStyle(color: CatppuccinMocha.text, fontSize: 14),
-              decoration: InputDecoration(
-                isDense: true,
-                filled: true,
-                fillColor: CatppuccinMocha.surface0,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: CatppuccinMocha.surface2),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: CatppuccinMocha.surface2),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: CatppuccinMocha.mauve),
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              ),
-              items: models.map((model) {
-                final tierColor = switch (model.tier) {
-                  'Fable'  => CatppuccinMocha.pink,
-                  'Opus'   => CatppuccinMocha.mauve,
-                  'Sonnet' => CatppuccinMocha.blue,
-                  'Haiku'  => CatppuccinMocha.teal,
-                  _        => CatppuccinMocha.overlay0,
-                };
-                return DropdownMenuItem(
-                  value: model.id,
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: tierColor.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          model.tier,
-                          style: TextStyle(color: tierColor, fontSize: 11, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(model.label, style: const TextStyle(color: CatppuccinMocha.text)),
-                    ],
-                  ),
-                );
-              }).toList(),
-              onChanged: (val) {
-                if (val == null) return;
-                ref.read(settingsProvider.notifier).update(
-                  settings.copyWith(claudeModelId: val),
-                );
-              },
-            );
-          }),
+          // Task Extraction model — Anthropic (cloud) or on-prem (on-device)
+          const _TaskExtractionSettingsSection(),
           const SizedBox(height: 24),
           const Divider(),
           const SizedBox(height: 16),
@@ -483,6 +414,291 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Lets the user choose between cloud (Claude API) and on-device (bundled LLM)
+/// task extraction, and manage the local GGUF model. Mirrors the Whisper model
+/// management UI in [_RecordingSettingsSection].
+class _TaskExtractionSettingsSection extends ConsumerStatefulWidget {
+  const _TaskExtractionSettingsSection();
+
+  @override
+  ConsumerState<_TaskExtractionSettingsSection> createState() => _TaskExtractionSettingsSectionState();
+}
+
+class _TaskExtractionSettingsSectionState extends ConsumerState<_TaskExtractionSettingsSection> {
+  Map<LocalLlmModel, bool> _modelDownloaded = {};
+  bool _downloading = false;
+  double _downloadProgress = 0;
+  bool _backendAvailable = false;
+  StreamSubscription<LocalLlmProgress>? _progressSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkModels();
+    LocalLlmService.instance.isBackendAvailable().then((v) {
+      if (mounted) setState(() => _backendAvailable = v);
+    });
+    _downloading = LocalLlmService.instance.isDownloading;
+    _downloadProgress = LocalLlmService.instance.downloadProgress;
+    _progressSub = LocalLlmService.instance.progressStream.listen((p) {
+      if (!mounted) return;
+      if (p.status == LocalLlmStatus.downloadingModel) {
+        setState(() {
+          _downloading = true;
+          _downloadProgress = p.downloadProgress ?? 0;
+        });
+      } else if (p.status == LocalLlmStatus.done || p.status == LocalLlmStatus.error) {
+        if (mounted) setState(() => _downloading = false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _progressSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkModels() async {
+    final results = <LocalLlmModel, bool>{};
+    for (final m in LocalLlmModel.values) {
+      results[m] = await LocalLlmService.instance.isModelDownloaded(m);
+    }
+    if (mounted) setState(() => _modelDownloaded = results);
+  }
+
+  Future<void> _downloadModel(LocalLlmModel model) async {
+    setState(() { _downloading = true; _downloadProgress = 0; });
+    try {
+      await LocalLlmService.instance.ensureModel(model);
+      await _checkModels();
+    } catch (e) {
+      if (mounted && !e.toString().contains('cancelled')) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Download failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  Future<void> _deleteModel(LocalLlmModel model) async {
+    await LocalLlmService.instance.deleteModel(model);
+    await _checkModels();
+  }
+
+  OutlineInputBorder _border(Color c) =>
+      OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: c));
+
+  Widget _badge(String text, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(4)),
+        child: Text(text, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+      );
+
+  DropdownMenuItem<String> _cloudMenuItem(ClaudeModel model) {
+    final tierColor = switch (model.tier) {
+      'Fable' => CatppuccinMocha.pink,
+      'Opus' => CatppuccinMocha.mauve,
+      'Sonnet' => CatppuccinMocha.blue,
+      'Haiku' => CatppuccinMocha.teal,
+      _ => CatppuccinMocha.overlay0,
+    };
+    return DropdownMenuItem(
+      value: model.id,
+      child: Row(children: [
+        _badge(model.tier, tierColor),
+        const SizedBox(width: 8),
+        Flexible(child: Text(model.label, overflow: TextOverflow.ellipsis, style: const TextStyle(color: CatppuccinMocha.text))),
+      ]),
+    );
+  }
+
+  DropdownMenuItem<String> _localMenuItem(LocalLlmModel m) {
+    final isDownloaded = _modelDownloaded[m] ?? false;
+    return DropdownMenuItem(
+      value: m.id,
+      child: Row(children: [
+        _badge('On-prem', CatppuccinMocha.green),
+        const SizedBox(width: 8),
+        Icon(isDownloaded ? Icons.download_done : Icons.cloud_download_outlined, size: 14,
+            color: isDownloaded ? CatppuccinMocha.green : CatppuccinMocha.overlay0),
+        const SizedBox(width: 6),
+        Flexible(child: Text(m.label, overflow: TextOverflow.ellipsis, style: const TextStyle(color: CatppuccinMocha.text))),
+      ]),
+    );
+  }
+
+  Widget _modeChip(String id, String label, IconData icon, bool isSelected, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? CatppuccinMocha.mauve.withValues(alpha: 0.15) : CatppuccinMocha.surface0,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: isSelected ? CatppuccinMocha.mauve : CatppuccinMocha.surface2),
+          ),
+          child: Row(children: [
+            Icon(icon, size: 14, color: isSelected ? CatppuccinMocha.mauve : CatppuccinMocha.overlay0),
+            const SizedBox(width: 6),
+            Text(label, style: TextStyle(
+              fontSize: 13,
+              color: isSelected ? CatppuccinMocha.mauve : CatppuccinMocha.subtext1,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = ref.watch(settingsProvider);
+    final isLocal = settings.taskExtractionModeStr == 'local';
+    final selectedLocalModel = LocalLlmModel.fromId(settings.localLlmModelId);
+    final cloudModels = ref.watch(availableModelsProvider);
+    final validCloudId = cloudModels.any((m) => m.id == settings.claudeModelId)
+        ? settings.claudeModelId
+        : kDefaultClaudeModelId;
+    final notifier = ref.read(settingsProvider.notifier);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Task Extraction Model', style: TextStyle(fontWeight: FontWeight.w600, color: CatppuccinMocha.text)),
+        const SizedBox(height: 4),
+        const Text(
+          'Model used to extract action items and summaries from meetings.',
+          style: TextStyle(fontSize: 13, color: CatppuccinMocha.overlay0),
+        ),
+        const SizedBox(height: 10),
+
+        // Mode selector
+        Row(children: [
+          _modeChip('cloud', 'Anthropic', Icons.cloud_outlined, !isLocal,
+            () => notifier.update(settings.copyWith(taskExtractionModeStr: 'cloud'))),
+          _modeChip('local', 'On-device', Icons.memory_outlined, isLocal,
+            () => notifier.update(settings.copyWith(taskExtractionModeStr: 'local'))),
+        ]),
+        const SizedBox(height: 12),
+
+        if (!isLocal) ...[
+          // Cloud model picker
+          const Text('Model', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: CatppuccinMocha.subtext1)),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            value: validCloudId,
+            isExpanded: true,
+            dropdownColor: CatppuccinMocha.surface0,
+            style: const TextStyle(color: CatppuccinMocha.text, fontSize: 14),
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              fillColor: CatppuccinMocha.surface0,
+              border: _border(CatppuccinMocha.surface2),
+              enabledBorder: _border(CatppuccinMocha.surface2),
+              focusedBorder: _border(CatppuccinMocha.mauve),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            items: cloudModels.map(_cloudMenuItem).toList(),
+            onChanged: (val) {
+              if (val == null) return;
+              notifier.update(settings.copyWith(claudeModelId: val));
+            },
+          ),
+        ] else ...[
+          // On-device model picker
+          const Text('Model', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: CatppuccinMocha.subtext1)),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            value: selectedLocalModel.id,
+            isExpanded: true,
+            dropdownColor: CatppuccinMocha.surface0,
+            style: const TextStyle(color: CatppuccinMocha.text, fontSize: 14),
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              fillColor: CatppuccinMocha.surface0,
+              border: _border(CatppuccinMocha.surface2),
+              enabledBorder: _border(CatppuccinMocha.surface2),
+              focusedBorder: _border(CatppuccinMocha.mauve),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            items: LocalLlmModel.values.map(_localMenuItem).toList(),
+            onChanged: (val) {
+              if (val == null) return;
+              notifier.update(settings.copyWith(localLlmModelId: val));
+            },
+          ),
+          const SizedBox(height: 10),
+
+          // Engine availability
+          Row(children: [
+            Icon(_backendAvailable ? Icons.check_circle : Icons.error_outline, size: 14,
+                color: _backendAvailable ? CatppuccinMocha.green : CatppuccinMocha.yellow),
+            const SizedBox(width: 6),
+            Expanded(child: Text(
+              _backendAvailable
+                  ? 'On-device engine ready (llama.cpp bundled)'
+                  : 'On-device engine unavailable in this build — use Anthropic, or rebuild.',
+              style: TextStyle(fontSize: 12, color: _backendAvailable ? CatppuccinMocha.text : CatppuccinMocha.yellow),
+            )),
+          ]),
+          const SizedBox(height: 10),
+
+          // Download / progress
+          if (_downloading) ...[
+            LinearProgressIndicator(
+              value: _downloadProgress > 0 ? _downloadProgress : null,
+              backgroundColor: CatppuccinMocha.surface0,
+              color: CatppuccinMocha.teal,
+            ),
+            const SizedBox(height: 4),
+            Row(children: [
+              Expanded(child: Text(
+                _downloadProgress > 0 ? 'Downloading… ${(_downloadProgress * 100).round()}%' : 'Downloading…',
+                style: const TextStyle(fontSize: 12, color: CatppuccinMocha.overlay0),
+              )),
+              TextButton(
+                style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), minimumSize: Size.zero),
+                onPressed: () {
+                  LocalLlmService.instance.cancelDownload();
+                  setState(() => _downloading = false);
+                },
+                child: const Text('Cancel', style: TextStyle(fontSize: 12, color: CatppuccinMocha.red)),
+              ),
+            ]),
+          ] else
+            Row(children: [
+              if (!(_modelDownloaded[selectedLocalModel] ?? false))
+                ElevatedButton.icon(
+                  onPressed: () => _downloadModel(selectedLocalModel),
+                  icon: const Icon(Icons.download, size: 14),
+                  label: Text('Download ${selectedLocalModel.label}'),
+                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+                )
+              else ...[
+                const Icon(Icons.check_circle, size: 14, color: CatppuccinMocha.green),
+                const SizedBox(width: 6),
+                const Text('Downloaded', style: TextStyle(fontSize: 13, color: CatppuccinMocha.green)),
+                const SizedBox(width: 12),
+                TextButton(
+                  style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), minimumSize: Size.zero),
+                  onPressed: () => _deleteModel(selectedLocalModel),
+                  child: const Text('Delete', style: TextStyle(fontSize: 12, color: CatppuccinMocha.red)),
+                ),
+              ],
+            ]),
+        ],
+      ],
     );
   }
 }

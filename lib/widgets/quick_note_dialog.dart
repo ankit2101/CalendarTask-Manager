@@ -106,6 +106,10 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
   // ─── AI consent ────────────────────────────────────────────────────────────
 
   Future<bool> _ensureAiConsent() async {
+    // On-device extraction sends nothing to the network, so the cloud data
+    // notice does not apply.
+    if (ref.read(settingsProvider).taskExtractionModeStr == 'local') return true;
+
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool('claude_ai_consent_given') == true) return true;
 
@@ -288,7 +292,7 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
 
     setState(() { _isSummarizing = true; _summarizeError = null; });
     try {
-      final client = await ref.read(claudeClientProvider.future);
+      final client = await ref.read(taskExtractorProvider.future);
       final result = await client.summarizeTranscript(_transcription!, widget.event);
       for (final item in _actionItems) item.controller.dispose();
       setState(() {
@@ -310,7 +314,7 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
     if (!await _ensureAiConsent()) return;
     setState(() { _isExtracting = true; _extractError = null; });
     try {
-      final client = await ref.read(claudeClientProvider.future);
+      final client = await ref.read(taskExtractorProvider.future);
       final items = await client.extractActionItems(
         widget.event,
         transcript: _transcription,
