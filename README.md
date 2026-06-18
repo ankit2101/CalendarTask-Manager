@@ -2,7 +2,7 @@
 
 > A Flutter desktop app that unifies your calendars, records and transcribes meetings on-device, captures notes, and turns action items into tasks — with Claude AI built in.
 
-**Platform:** macOS · Windows &nbsp;|&nbsp; **Version:** 4.0.0 &nbsp;|&nbsp; **License:** MIT
+**Platform:** macOS · Windows &nbsp;|&nbsp; **Version:** 4.1.0 &nbsp;|&nbsp; **License:** MIT
 
 [![Release](https://img.shields.io/github/v/release/ankit2101/CalendarTask-Manager)](https://github.com/ankit2101/CalendarTask-Manager/releases)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-blue)](https://github.com/ankit2101/CalendarTask-Manager/releases)
@@ -104,11 +104,21 @@ Grab the latest release from [**Releases →**](https://github.com/ankit2101/Cal
 - Each task card shows the **source meeting name** and **created date**
 - Action items from meeting notes land here automatically
 
-### 🤖 Claude AI Integration
+### 🤖 AI Integration — Cloud or On-Device
 
-Uses the [Anthropic Claude API](https://console.anthropic.com/) to summarize meetings and extract action items from your transcript, AI summary, and notes combined.
+Summarize meetings and extract action items from your transcript, AI summary, and notes combined — using either the **Anthropic Claude API** or a **fully on-device LLM**. Pick the backend in **Settings → Task Extraction** with the **Anthropic / On-device** mode chips.
 
-Choose your Claude model in **Settings**:
+**On-device extraction** runs locally with bundled `llama.cpp` — no API key and **no data leaves your machine** (the cloud consent dialog is skipped entirely). Choose a model; it downloads once and runs locally thereafter:
+
+| Model | Size | Notes |
+|---|---|---|
+| Qwen2.5 1.5B Instruct | ~1 GB | Fastest, lowest memory |
+| Qwen2.5 3B Instruct | ~2 GB | Balanced |
+| Llama 3.2 3B Instruct | ~2 GB | Alternative |
+
+Downloads are pinned to immutable Hugging Face revisions and verified by exact size **and SHA-256** before use.
+
+**Cloud (Claude) models** — choose your model in **Settings**:
 
 | Model | ID | Notes |
 |---|---|---|
@@ -121,8 +131,8 @@ Choose your Claude model in **Settings**:
 | Claude Sonnet 4.5 | `claude-sonnet-4-5-20250929` | Legacy |
 
 - Model change takes effect immediately — no restart needed
-- Attendee email addresses are stripped from prompts before sending to the API
-- A Claude API key is **optional** — all calendar and task features work without one
+- Attendee email addresses are stripped from prompts before sending to the API (cloud mode)
+- A Claude API key is **optional** — all calendar and task features work without one, and on-device extraction needs no key at all
 
 ### 🔒 Security & Privacy
 
@@ -131,7 +141,8 @@ Choose your Claude model in **Settings**:
 - **SSRF protection** — calendar URLs are validated to block private-network addresses (localhost, RFC 1918 ranges, link-local)
 - **Request limits** — ICS feeds are capped at 10 MB; HTTP connections time out at 15 s connect / 60 s receive; recurring event expansion is capped to prevent CPU abuse
 - **On-device transcription** — meeting audio is transcribed locally with bundled Whisper; the recording itself **never leaves your machine** and is deleted after transcription by default
-- **AI consent** — a one-time dialog informs you before any meeting content (transcript, summary, or notes) is sent to Claude
+- **On-device task extraction** — optionally summarize meetings and extract action items with a local `llama.cpp` LLM, so **no meeting content ever leaves your machine**; downloaded models are verified by exact size and SHA-256 against pinned Hugging Face revisions
+- **AI consent** — a one-time dialog informs you before any meeting content (transcript, summary, or notes) is sent to Claude (cloud mode only — on-device mode skips it)
 - **No telemetry** — no analytics, no crash reporting, no data leaves the device except Claude API calls you explicitly trigger
 
 ---
@@ -140,8 +151,9 @@ Choose your Claude model in **Settings**:
 
 - **macOS** 10.13+ (Apple Silicon and Intel) — system-audio capture during recording requires **macOS 13+** (ScreenCaptureKit); older versions fall back to microphone-only
 - **Windows** 10+ (64-bit)
-- A [Claude API key](https://console.anthropic.com/) for AI features (optional — calendar, recording, and transcription all work without one)
+- A [Claude API key](https://console.anthropic.com/) for cloud AI features (optional — calendar, recording, transcription, and on-device task extraction all work without one)
 - ~150 MB–3 GB free disk for the Whisper model you choose (downloaded once, on demand)
+- ~1–2 GB extra free disk if you use an on-device task-extraction model (Qwen2.5 / Llama 3.2, downloaded once, on demand)
 
 ---
 
@@ -232,7 +244,8 @@ Both files must be present in the same folder on every machine. Once the key fil
 | Navigation | go_router |
 | Data persistence | AES-256-GCM encrypted JSON file |
 | Credential storage | OS Keychain (macOS) / Credential Manager (Windows) via flutter_secure_storage |
-| AI | Anthropic Claude API (Opus 4.8 / Sonnet 4.6 / Haiku 4.5) |
+| AI (cloud) | Anthropic Claude API (Opus 4.8 / Sonnet 4.6 / Haiku 4.5) |
+| AI (on-device) | Bundled **llama.cpp** (Qwen2.5 1.5B/3B, Llama 3.2 3B GGUF) via `LlamaRunner` in `RecordingBridge.swift` |
 | Transcription | On-device **Whisper** (`whisper.cpp` via bundled `whisper.xcframework`) |
 | Audio capture | AVAudioEngine (microphone) + ScreenCaptureKit (system audio, macOS 13+) via `RecordingBridge.swift` |
 | ICS parsing | Custom RFC 5545 parser with full TZID, RRULE, EXDATE support |
@@ -260,7 +273,9 @@ lib/
 ├── providers/
 │   └── app_providers.dart          # Riverpod providers
 ├── services/
-│   ├── ai/claude_client.dart       # Anthropic API client (summary + action items, email scrub)
+│   ├── ai/task_extractor.dart      # TaskExtractor interface + shared prompt/parse helpers
+│   ├── ai/claude_client.dart       # Cloud TaskExtractor: Anthropic API (summary + action items, email scrub)
+│   ├── ai/local_llm_service.dart   # On-device TaskExtractor: GGUF model download/verify + llama.cpp inference
 │   ├── ai/whisper_service.dart     # Whisper model download/management + transcription
 │   ├── recording/recording_service.dart  # Method-channel wrapper around RecordingBridge
 │   ├── auth/token_store.dart       # Secure credential storage (Keychain + fallback)
@@ -280,9 +295,10 @@ lib/
 │   └── theme/                      # Catppuccin Mocha theme
 macos/Runner/
 ├── OutlookBridge.swift             # NSAppleScript method channel (Outlook fallback)
-├── RecordingBridge.swift           # Mic + system-audio capture, mixing, Whisper transcription
+├── RecordingBridge.swift           # Mic + system-audio capture, mixing, Whisper transcription, llama.cpp runner
 └── MainFlutterWindow.swift         # Registers Outlook + Recording bridges on startup
 macos/whisper.xcframework/          # Bundled on-device Whisper engine (macOS universal slice)
+macos/llama.podspec                 # Pulls in prebuilt llama.cpp xcframework via CocoaPods
 tools/
 ├── recover_data.dart               # CLI tool to decrypt and inspect the data file
 └── reencrypt_data.dart             # CLI tool to re-encrypt the data file with a new key
@@ -302,7 +318,12 @@ See the `docs/` directory for build and development instructions:
 
 See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 
-**Latest (v4.0.0):**
+**Latest (v4.1.0):**
+- **On-device task extraction** — summarize meetings and extract action items with a local `llama.cpp` LLM (Qwen2.5 1.5B/3B, Llama 3.2 3B); no API key, no data leaves your machine
+- **Task Extraction selector** — Anthropic / On-device mode chips in Settings, each with its own model dropdown
+- **Verified model downloads** — GGUF models pinned to immutable Hugging Face revisions and checked by exact size + SHA-256 before use
+
+**v4.0.0:**
 - **Meeting recording** — capture microphone + system audio (ScreenCaptureKit on macOS 13+) directly from meeting cards
 - **On-device Whisper transcription** — bundled `whisper.xcframework` transcribes locally; audio never leaves your machine
 - **Whisper model management** — download/delete Tiny → Large-v3 models from Settings → Recording

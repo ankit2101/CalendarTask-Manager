@@ -4,6 +4,21 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [4.1.0] — 2026-06-18
+
+### Added
+- **On-device task extraction** — action items and meeting summaries can now be generated **fully locally**, with no API key and no data leaving the machine. A new `TaskExtractor` interface is implemented by both the cloud `ClaudeClient` and the new `LocalLlmService`; the chosen backend is routed through `taskExtractorProvider`. Local mode skips the cloud data-consent prompt entirely.
+- **Bundled local LLM runtime** — `LocalLlmService` manages GGUF model downloads (**Qwen2.5 1.5B**, **Qwen2.5 3B**, **Llama 3.2 3B**, all Q4_K_M) the same way `WhisperService` does, and runs inference through a native `llama.cpp` bridge (`LlamaRunner` in `RecordingBridge.swift`, greedy decode with each model's chat template). `llama.cpp` is pulled in automatically via CocoaPods (`macos/llama.podspec`, prebuilt xcframework) and bundles into the `.app` with no manual setup.
+- **Task Extraction selector** — Settings now has **Anthropic / On-device** mode chips (matching the Audio Capture Mode style) followed by a mode-specific model dropdown. On-device models show download status and engine availability.
+
+### Security
+- **Verified local model downloads** — GGUF model URLs are pinned to immutable Hugging Face commit revisions (not `main`), and every download is validated against the exact byte size **and** a streamed **SHA-256** before being committed. A changed, re-uploaded, or tampered file is rejected rather than loaded into the native runner. `crypto` is now a direct dependency for the hashing.
+
+### Fixed
+- **Llama inference use-after-scope** — `llama_batch_get_one` stores the token buffer's base address, so `llama_decode` now runs inside the `withUnsafeMutable*Pointer` closures rather than on an escaped batch copy.
+
+---
+
 ## [4.0.0] — 2026-06-17
 
 ### Added
