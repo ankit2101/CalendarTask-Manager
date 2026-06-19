@@ -16,6 +16,7 @@ All notable changes to CalendarTask Manager are documented here.
 
 ### Fixed
 - **Llama inference use-after-scope** — `llama_batch_get_one` stores the token buffer's base address, so `llama_decode` now runs inside the `withUnsafeMutable*Pointer` closures rather than on an escaped batch copy.
+- **Crash on long transcripts** — on-device extraction no longer aborts (`ggml_abort`) when a meeting transcript exceeds the LLM batch/context limits. The prompt is now decoded in `n_batch`-sized chunks, truncated from the middle to stay within the context window (preserving the chat template's assistant cue at the tail), and guarded against an empty vocab — each previously-fatal condition now surfaces as a recoverable error instead of killing the app.
 
 ---
 
