@@ -128,9 +128,11 @@ class RecordingBridge: NSObject {
         audioEngine = engine
         do {
             try engine.start()
+            fputs("[RecordingBridge] mic engine started OK; inputFmt=\(engine.inputNode.outputFormat(forBus: 0).description)\n", stderr)
             isRecording = true
             result(nil)
         } catch {
+            fputs("[RecordingBridge] mic engine start FAILED: \(error.localizedDescription)\n", stderr)
             result(FlutterError(code: "ENGINE_ERROR", message: error.localizedDescription, details: nil))
         }
     }
@@ -149,12 +151,26 @@ class RecordingBridge: NSObject {
         let targetFmt = wavFormat()
         var lazyConverter: AVAudioConverter? = nil
 
+        var tapCallCount = 0
+
         // nil format → receive the hardware's native format in the callback
         engine.inputNode.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buf, _ in
             guard let self = self, let outFile = self.micFile else { return }
 
+            tapCallCount += 1
+            if tapCallCount == 1 {
+                // First callback — confirm tap fires and log hardware format
+                fputs("[RecordingBridge] mic tap fired (first callback): hwFmt=\(buf.format.description) frameLen=\(buf.frameLength)\n", stderr)
+            }
+
             if lazyConverter == nil {
-                lazyConverter = AVAudioConverter(from: buf.format, to: targetFmt)
+                let conv = AVAudioConverter(from: buf.format, to: targetFmt)
+                if conv == nil {
+                    fputs("[RecordingBridge] mic tap: AVAudioConverter init FAILED from=\(buf.format.description) to=\(targetFmt.description)\n", stderr)
+                } else {
+                    fputs("[RecordingBridge] mic tap: converter created OK from=\(buf.format.description)\n", stderr)
+                }
+                lazyConverter = conv
             }
             guard let conv = lazyConverter else { return }
 
@@ -168,7 +184,20 @@ class RecordingBridge: NSObject {
                 status.pointee = .haveData
                 return buf
             }
-            if err == nil, out.frameLength > 0 { try? outFile.write(from: out) }
+            if let err = err {
+                fputs("[RecordingBridge] mic tap: conversion error: \(err.localizedDescription)\n", stderr)
+            } else if out.frameLength > 0 {
+                if tapCallCount == 1 {
+                    fputs("[RecordingBridge] mic tap: writing \(out.frameLength) frames; outFmt=\(out.format.description) fileProcFmt=\(outFile.processingFormat.description)\n", stderr)
+                }
+                do {
+                    try outFile.write(from: out)
+                } catch {
+                    fputs("[RecordingBridge] mic tap: WRITE FAILED (tapCall=\(tapCallCount)): \(error)\n", stderr)
+                }
+            } else if tapCallCount <= 3 {
+                fputs("[RecordingBridge] mic tap: conversion produced 0 frames (tapCall=\(tapCallCount))\n", stderr)
+            }
         }
         return true
     }
@@ -456,9 +485,14 @@ class RecordingBridge: NSObject {
 
             // Configure params
             var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
-            let langPtr = strdup("auto")
+            // "auto" language detection requires ~15s of audio to work — shorter
+            // recordings always fail with code -3. Use the device's primary language
+            // (e.g. "en", "hi") so any recording length transcribes successfully.
+            let lang = Locale.current.languageCode ?? "en"
+            let langPtr = strdup(lang)
             defer { free(langPtr) }
             params.language = UnsafePointer(langPtr)
+            params.detect_language = false
             params.translate = false
             params.print_progress = false
             params.print_realtime = false
@@ -466,10 +500,24 @@ class RecordingBridge: NSObject {
             params.print_special = false
             params.n_threads = Int32(max(1, ProcessInfo.processInfo.processorCount - 1))
 
+            // Guard: whisper UB with 0 samples produces garbage output — surface it clearly.
+            guard !samples.isEmpty else {
+                NSLog("[RecordingBridge] transcribeAudio: 0 samples – WAV file appears empty (wavPath=%@)", wavPath)
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "EMPTY_AUDIO",
+                                        message: "Recording contains no audio. The microphone may not have captured anything.",
+                                        details: nil))
+                }
+                return
+            }
+
             // Run transcription
+            NSLog("[RecordingBridge] transcribeAudio: samples=%d duration=%.1fs wavPath=%@",
+                  samples.count, Double(samples.count) / 16000.0, wavPath)
             let ret = samples.withUnsafeBufferPointer { buf in
                 whisper_full(ctx, params, buf.baseAddress, Int32(buf.count))
             }
+            NSLog("[RecordingBridge] whisper_full returned: %d", ret)
 
             guard ret == 0 else {
                 DispatchQueue.main.async {
@@ -502,10 +550,12 @@ class RecordingBridge: NSObject {
         do {
             file = try AVAudioFile(forReading: url)
         } catch {
-            print("[RecordingBridge] AVAudioFile open failed: \(error)")
+            NSLog("[RecordingBridge] loadWavSamples: AVAudioFile open failed – %@", error.localizedDescription)
             return nil
         }
 
+        NSLog("[RecordingBridge] loadWavSamples: fileSize=%d file.length=%lld format=%@",
+              fileSize, file.length, file.processingFormat.description)
         guard file.length > 0 else { return [] }
 
         let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
@@ -723,7 +773,7 @@ enum LlamaRunner {
         let nCtx: UInt32 = 8192
         var cparams = llama_context_default_params()
         cparams.n_ctx = nCtx
-        cparams.n_batch = 512
+        cparams.n_batch = 2048
         cparams.n_threads = Int32(max(1, ProcessInfo.processInfo.processorCount - 1))
         cparams.n_threads_batch = cparams.n_threads
         guard let ctx = llama_init_from_model(model, cparams) else {
@@ -745,21 +795,45 @@ enum LlamaRunner {
         guard nPrompt > 0 else { throw LlamaError.tokenize }
         tokens = Array(tokens.prefix(Int(nPrompt)))
 
-        // Evaluate the prompt. llama_batch_get_one stores buf.baseAddress, which
-        // is only valid inside withUnsafeMutableBufferPointer — so the decode must
-        // happen within that scope, not on an escaped copy of the batch struct.
-        let promptOk = tokens.withUnsafeMutableBufferPointer { buf -> Bool in
-            let batch = llama_batch_get_one(buf.baseAddress, Int32(buf.count))
-            return llama_decode(ctx, batch) == 0
+        // Keep the prompt within the context window (leaving ≥1 slot for
+        // generation; a full KV cache triggers ggml_abort inside llama_decode).
+        // When it overflows, drop tokens from the MIDDLE of the transcript, not
+        // the tail: applyChatTemplate appends the assistant cue
+        // (<|im_start|>assistant) at the very end, so a plain prefix() would
+        // discard it and leave the model with a dangling user turn and no signal
+        // to start answering. Keeping a head and tail preserves the template
+        // markers on both ends plus the start/end of the meeting (where intros
+        // and action-item recaps usually live).
+        let maxPromptTokens = Int(nCtx) - 1
+        if tokens.count > maxPromptTokens {
+            let keepTail = maxPromptTokens / 4
+            let keepHead = maxPromptTokens - keepTail
+            tokens = Array(tokens.prefix(keepHead)) + Array(tokens.suffix(keepTail))
         }
-        guard promptOk else { throw LlamaError.decode(-1) }
+
+        // Evaluate the prompt in chunks of n_batch to avoid the GGML_ASSERT that
+        // aborts when a single batch exceeds n_batch tokens. Meeting transcripts can
+        // easily exceed 2048 tokens, so we must never pass the full prompt in one shot.
+        let batchSize = Int(cparams.n_batch)
+        var pos = 0
+        while pos < tokens.count {
+            let end = min(pos + batchSize, tokens.count)
+            var chunk = Array(tokens[pos..<end])
+            let ok = chunk.withUnsafeMutableBufferPointer { buf -> Bool in
+                let batch = llama_batch_get_one(buf.baseAddress, Int32(buf.count))
+                return llama_decode(ctx, batch) == 0
+            }
+            guard ok else { throw LlamaError.decode(-1) }
+            pos = end
+        }
 
         let nVocab = Int(llama_vocab_n_tokens(vocab))
+        guard nVocab > 0 else { throw LlamaError.contextInit }
         var output = ""
         var generated = 0
-        var nPast = nPrompt
+        var nPast = tokens.count
 
-        while generated < maxTokens && Int(nPast) < Int(nCtx) {
+        while generated < maxTokens && nPast < Int(nCtx) {
             // Greedy: pick the highest-logit token from the last position.
             guard let logits = llama_get_logits_ith(ctx, -1) else { break }
             var best = 0
