@@ -793,10 +793,23 @@ enum LlamaRunner {
                            /*add_special*/ true, /*parse_special*/ true)
         }
         guard nPrompt > 0 else { throw LlamaError.tokenize }
-        // Truncate to leave at least 1 slot for generation. Filling the KV cache
-        // completely before generation triggers ggml_abort inside llama_decode.
+        tokens = Array(tokens.prefix(Int(nPrompt)))
+
+        // Keep the prompt within the context window (leaving ≥1 slot for
+        // generation; a full KV cache triggers ggml_abort inside llama_decode).
+        // When it overflows, drop tokens from the MIDDLE of the transcript, not
+        // the tail: applyChatTemplate appends the assistant cue
+        // (<|im_start|>assistant) at the very end, so a plain prefix() would
+        // discard it and leave the model with a dangling user turn and no signal
+        // to start answering. Keeping a head and tail preserves the template
+        // markers on both ends plus the start/end of the meeting (where intros
+        // and action-item recaps usually live).
         let maxPromptTokens = Int(nCtx) - 1
-        tokens = Array(tokens.prefix(min(Int(nPrompt), maxPromptTokens)))
+        if tokens.count > maxPromptTokens {
+            let keepTail = maxPromptTokens / 4
+            let keepHead = maxPromptTokens - keepTail
+            tokens = Array(tokens.prefix(keepHead)) + Array(tokens.suffix(keepTail))
+        }
 
         // Evaluate the prompt in chunks of n_batch to avoid the GGML_ASSERT that
         // aborts when a single batch exceeds n_batch tokens. Meeting transcripts can
