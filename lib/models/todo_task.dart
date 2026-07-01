@@ -9,6 +9,10 @@ class TodoTask {
   final String? dueDate;
   final String createdAt;
   final String? meetingEventId;
+  /// Whether this todo was synced from a pre-meeting prep note rather than the
+  /// live/post-meeting note — lets each note kind resync its own action items
+  /// without deleting the other's.
+  final bool fromPrepNote;
   /// ISO 8601 timestamp — when an onHold task should auto-resume to pending.
   final String? holdUntil;
 
@@ -21,6 +25,7 @@ class TodoTask {
     this.dueDate,
     required this.createdAt,
     this.meetingEventId,
+    this.fromPrepNote = false,
     this.holdUntil,
   });
 
@@ -55,6 +60,7 @@ class TodoTask {
         dueDate: dueDate ?? this.dueDate,
         createdAt: createdAt,
         meetingEventId: meetingEventId,
+        fromPrepNote: fromPrepNote,
         holdUntil: holdUntil == _sentinel
             ? this.holdUntil
             : holdUntil as String?,
@@ -69,6 +75,7 @@ class TodoTask {
         'dueDate': dueDate,
         'createdAt': createdAt,
         'meetingEventId': meetingEventId,
+        'fromPrepNote': fromPrepNote,
         'holdUntil': holdUntil,
       };
 
@@ -82,6 +89,7 @@ class TodoTask {
         dueDate: json['dueDate'] as String?,
         createdAt: json['createdAt'] as String,
         meetingEventId: json['meetingEventId'] as String?,
+        fromPrepNote: json['fromPrepNote'] as bool? ?? false,
         holdUntil: json['holdUntil'] as String?,
       );
 

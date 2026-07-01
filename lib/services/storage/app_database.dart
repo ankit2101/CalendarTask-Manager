@@ -524,22 +524,23 @@ class AppDatabase {
 
   Future<void> saveMeetingRecord(MeetingRecord record) async {
     final history = getMeetingHistory();
-    history.removeWhere((r) => r.eventId == record.eventId);
+    history.removeWhere((r) => r.eventId == record.eventId && r.isPrepNote == record.isPrepNote);
     history.add(record);
     _data['meetingHistory'] = history.map((r) => r.toJson()).toList();
     await _save();
   }
 
-  Future<void> deleteMeetingRecord(String eventId) async {
+  Future<void> deleteMeetingRecord(String eventId, {bool isPrepNote = false}) async {
     final history = getMeetingHistory();
-    history.removeWhere((r) => r.eventId == eventId);
+    history.removeWhere((r) => r.eventId == eventId && r.isPrepNote == isPrepNote);
     _data['meetingHistory'] = history.map((r) => r.toJson()).toList();
     await _save();
   }
 
-  Future<void> deleteTodosByMeetingId(String meetingEventId) async {
+  Future<void> deleteTodosByMeetingId(String meetingEventId, {bool? fromPrepNote}) async {
     final todos = getTodos();
-    todos.removeWhere((t) => t.meetingEventId == meetingEventId);
+    todos.removeWhere((t) => t.meetingEventId == meetingEventId &&
+        (fromPrepNote == null || t.fromPrepNote == fromPrepNote));
     _data['todos'] = todos.map((t) => t.toJson()).toList();
     await _save();
   }

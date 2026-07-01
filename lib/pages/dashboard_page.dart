@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -54,7 +55,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   Widget build(BuildContext context) {
     final eventsAsync = ref.watch(eventsProvider);
     final history = ref.watch(meetingHistoryProvider);
-    final notedEventIds = history.map((r) => r.eventId).toSet();
+    final notedEventIds = history.where((r) => !r.isPrepNote).map((r) => r.eventId).toSet();
     final dismissedIds = ref.watch(dismissedMeetingsProvider);
     final tzOverrides = ref.watch(eventTimeOverridesProvider);
     final today = _startOfDay(DateTime.now());
@@ -193,10 +194,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                     ...dayEvents.map((event) {
                       final ov = tzOverrides[event.id];
                       final end = ov != null ? parseToLocal(ov['end']!) : parseToLocal(event.end);
+                      final prepRecord = history
+                          .where((r) => r.isPrepNote && r.eventId == event.id)
+                          .firstOrNull;
                       return _EventCard(
                       event: event,
                       status: _eventStatus(event, tzOverrides),
                       hasNote: notedEventIds.contains(event.id),
+                      prepRecord: prepRecord,
                       isMissing: end.isBefore(now) &&
                           !notedEventIds.contains(event.id) &&
                           !dismissedIds.contains(event.id),
@@ -218,6 +223,7 @@ class _EventCard extends ConsumerStatefulWidget {
   final NormalizedEvent event;
   final String status;
   final bool hasNote;
+  final MeetingRecord? prepRecord;
   final bool isMissing;
   final bool isDismissed;
 
@@ -225,6 +231,7 @@ class _EventCard extends ConsumerStatefulWidget {
     required this.event,
     required this.status,
     required this.hasNote,
+    required this.prepRecord,
     required this.isMissing,
     required this.isDismissed,
   });
@@ -428,6 +435,10 @@ class _EventCardState extends ConsumerState<_EventCard> {
                 isRecording ? 'Stop' : 'Record',
                 style: TextStyle(fontSize: 12, color: isRecording ? CatppuccinMocha.red : CatppuccinMocha.overlay0),
               ),
+              if (isRecording) ...[
+                const SizedBox(width: 6),
+                const _LiveLevelMeter(),
+              ],
             ],
           ),
         ),
@@ -441,6 +452,7 @@ class _EventCardState extends ConsumerState<_EventCard> {
     final event = widget.event;
     final status = widget.status;
     final hasNote = widget.hasNote;
+    final prepRecord = widget.prepRecord;
     final isMissing = widget.isMissing;
     final isDismissed = widget.isDismissed;
 
@@ -644,8 +656,8 @@ class _EventCardState extends ConsumerState<_EventCard> {
               ),
             ],
 
-            // Note action row — hidden for private/dismissed events, shown for active & past
-            if (!event.isPrivate && !isDismissed && (status == 'past' || status == 'active')) ...[
+            // Note action row — hidden for private/dismissed events, shown for upcoming/active/past
+            if (!event.isPrivate && !isDismissed && (status == 'past' || status == 'active' || status == 'upcoming')) ...[
               const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
@@ -664,35 +676,77 @@ class _EventCardState extends ConsumerState<_EventCard> {
                         style: TextStyle(color: CatppuccinMocha.green, fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.5),
                       ),
                     ),
-                  if (hasNote)
-                    const Text('\u2713 Note saved', style: TextStyle(color: CatppuccinMocha.green, fontSize: 12))
-                  else ...[
-                    if (status == 'past') ...[
-                      IconButton(
-                        icon: const Icon(Icons.close, size: 14),
-                        color: CatppuccinMocha.overlay0,
-                        tooltip: 'Dismiss reminder',
-                        constraints: const BoxConstraints(),
-                        padding: EdgeInsets.zero,
-                        onPressed: () =>
-                            ref.read(dismissedMeetingsProvider.notifier).dismiss(event.id),
+                  // Prep notes — available while upcoming, and still reachable during
+                  // the meeting so they can be referred back to alongside live notes.
+                  if (status == 'upcoming' || (status == 'active' && prepRecord != null)) ...[
+                    if (prepRecord != null)
+                      OutlinedButton.icon(
+                        onPressed: () => showDialog(
+                          context: context,
+                          builder: (_) => QuickNoteDialog(
+                            event: event,
+                            isPrepNote: true,
+                            existingRecord: prepRecord,
+                          ),
+                        ),
+                        icon: const Icon(Icons.event_note, size: 13),
+                        label: const Text('Prep notes'),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: CatppuccinMocha.peach.withValues(alpha: 0.4)),
+                          foregroundColor: CatppuccinMocha.peach,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          minimumSize: Size.zero,
+                          textStyle: const TextStyle(fontSize: 12),
+                        ),
+                      )
+                    else if (status == 'upcoming')
+                      OutlinedButton(
+                        onPressed: () => showDialog(
+                          context: context,
+                          builder: (_) => QuickNoteDialog(event: event, isPrepNote: true),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: CatppuccinMocha.peach.withValues(alpha: 0.4)),
+                          foregroundColor: CatppuccinMocha.peach,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          minimumSize: Size.zero,
+                          textStyle: const TextStyle(fontSize: 12),
+                        ),
+                        child: const Text('+ Add Notes'),
                       ),
-                      const SizedBox(width: 8),
+                    const SizedBox(width: 8),
+                  ],
+                  if (status == 'past' || status == 'active') ...[
+                    if (hasNote)
+                      const Text('\u2713 Note saved', style: TextStyle(color: CatppuccinMocha.green, fontSize: 12))
+                    else ...[
+                      if (status == 'past') ...[
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 14),
+                          color: CatppuccinMocha.overlay0,
+                          tooltip: 'Dismiss reminder',
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                          onPressed: () =>
+                              ref.read(dismissedMeetingsProvider.notifier).dismiss(event.id),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      OutlinedButton(
+                        onPressed: () => showDialog(
+                          context: context,
+                          builder: (_) => QuickNoteDialog(event: event),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: (status == 'active' ? CatppuccinMocha.green : CatppuccinMocha.yellow).withValues(alpha: 0.4)),
+                          foregroundColor: status == 'active' ? CatppuccinMocha.green : CatppuccinMocha.yellow,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          minimumSize: Size.zero,
+                          textStyle: const TextStyle(fontSize: 12),
+                        ),
+                        child: Text(status == 'active' ? '+ Live Notes' : '+ Add Notes'),
+                      ),
                     ],
-                    OutlinedButton(
-                      onPressed: () => showDialog(
-                        context: context,
-                        builder: (_) => QuickNoteDialog(event: event),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: (status == 'active' ? CatppuccinMocha.green : CatppuccinMocha.yellow).withValues(alpha: 0.4)),
-                        foregroundColor: status == 'active' ? CatppuccinMocha.green : CatppuccinMocha.yellow,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        minimumSize: Size.zero,
-                        textStyle: const TextStyle(fontSize: 12),
-                      ),
-                      child: Text(status == 'active' ? '+ Live Notes' : '+ Add Notes'),
-                    ),
                   ],
                   // Record button \u2014 active and upcoming meetings
                   if (status == 'active' || status == 'upcoming') ...[
@@ -710,6 +764,67 @@ class _EventCardState extends ConsumerState<_EventCard> {
 }
 
 // \u2500\u2500\u2500 Pulsing dot for dashboard record button \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+// ───── Live mic level meter ─────────────────────────────────────────────
+//
+// Confirms audio is actually being captured while recording, instead of only
+// surfacing silence after the fact via the EMPTY_AUDIO transcription error.
+
+class _LiveLevelMeter extends StatefulWidget {
+  const _LiveLevelMeter();
+
+  @override
+  State<_LiveLevelMeter> createState() => _LiveLevelMeterState();
+}
+
+class _LiveLevelMeterState extends State<_LiveLevelMeter> {
+  static const _silenceThreshold = 0.02;
+  static const _silenceWarningDelay = Duration(seconds: 4);
+
+  double _level = 0;
+  DateTime _lastSound = DateTime.now();
+  StreamSubscription<double>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = RecordingService.instance.audioLevelStream.listen((level) {
+      if (level > _silenceThreshold) _lastSound = DateTime.now();
+      if (mounted) setState(() => _level = level);
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final silent = DateTime.now().difference(_lastSound) > _silenceWarningDelay;
+    final barCount = 4;
+    final litBars = (_level.clamp(0.0, 1.0) * barCount).ceil();
+    return Tooltip(
+      message: silent ? 'No audio detected — check your microphone' : 'Mic level',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(barCount, (i) {
+          final lit = i < litBars;
+          final color = silent
+              ? CatppuccinMocha.yellow
+              : (lit ? CatppuccinMocha.green : CatppuccinMocha.overlay0.withValues(alpha: 0.3));
+          return Container(
+            width: 2,
+            height: 4.0 + i * 2.0,
+            margin: const EdgeInsets.only(right: 1.5),
+            color: color,
+          );
+        }),
+      ),
+    );
+  }
+}
 
 class _PulsingRecordDot extends StatefulWidget {
   @override
