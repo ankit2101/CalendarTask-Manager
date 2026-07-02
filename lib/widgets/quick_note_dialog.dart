@@ -19,12 +19,17 @@ class QuickNoteDialog extends ConsumerStatefulWidget {
   final MeetingRecord? existingRecord;
   /// Pre-loaded transcription from a dashboard recording session.
   final String? initialTranscription;
+  /// Whether this is a pre-meeting prep note rather than a live/post-meeting
+  /// note. Prep notes are stored as a separate record from the meeting note
+  /// for the same event, and don't sync to todos.
+  final bool isPrepNote;
 
   const QuickNoteDialog({
     super.key,
     required this.event,
     this.existingRecord,
     this.initialTranscription,
+    this.isPrepNote = false,
   });
 
   @override
@@ -356,10 +361,15 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
             : DateTime.now().toIso8601String(),
         transcription: _transcription,
         aiSummary: _aiSummary,
+        isPrepNote: widget.isPrepNote,
       );
 
       await ref.read(meetingHistoryProvider.notifier).saveRecord(record);
-      await ref.read(todosProvider.notifier).deleteTodosByMeetingId(widget.event.id);
+
+      // Re-sync only the todos that came from this note kind, so a prep note's
+      // action items don't clobber the live/post-meeting note's todos and vice versa.
+      await ref.read(todosProvider.notifier)
+          .deleteTodosByMeetingId(widget.event.id, fromPrepNote: widget.isPrepNote);
 
       const uuid = Uuid();
       final now = DateTime.now().toIso8601String();
@@ -370,6 +380,7 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
             title: item.text,
             description: item.assignee != null ? 'Assigned to: ${item.assignee}' : null,
             meetingEventId: widget.event.id,
+            fromPrepNote: widget.isPrepNote,
             createdAt: now,
           ));
         }
@@ -411,7 +422,11 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
     final timeFormat = DateFormat('h:mm a');
     final dateFormat = DateFormat('EEEE, MMMM d');
     final start = parseToLocal(event.start);
-    final canExtract = (_noteController.text.trim().isNotEmpty || _transcription != null) && !_isExtracting;
+    // Action-item extraction only makes sense once the meeting has actually
+    // happened (live or past) — a prep note is written before anything occurred.
+    final canExtract = !widget.isPrepNote &&
+        (_noteController.text.trim().isNotEmpty || _transcription != null) &&
+        !_isExtracting;
 
     return Dialog(
       backgroundColor: CatppuccinMocha.base,
@@ -434,9 +449,11 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
                     const Divider(color: CatppuccinMocha.surface1),
                     const SizedBox(height: 16),
 
-                    // Recording controls
-                    _buildRecordingBar(),
-                    const SizedBox(height: 16),
+                    // Recording controls (not applicable before the meeting starts)
+                    if (!widget.isPrepNote) ...[
+                      _buildRecordingBar(),
+                      const SizedBox(height: 16),
+                    ],
 
                     // Transcript section (shown when available)
                     if (_transcription != null) ...[
@@ -545,9 +562,11 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
                       autofocus: !_isEditMode && widget.initialTranscription == null,
                       style: const TextStyle(color: CatppuccinMocha.text, fontSize: 14),
                       decoration: InputDecoration(
-                        hintText: _isActive
-                            ? 'Capture notes as the meeting progresses — decisions, topics, action items…'
-                            : 'What happened in this meeting? Decisions made, topics discussed…',
+                        hintText: widget.isPrepNote
+                            ? 'Agenda, talking points, questions to ask…'
+                            : (_isActive
+                                ? 'Capture notes as the meeting progresses — decisions, topics, action items…'
+                                : 'What happened in this meeting? Decisions made, topics discussed…'),
                         hintStyle: const TextStyle(color: CatppuccinMocha.overlay0, fontSize: 14),
                         filled: true,
                         fillColor: CatppuccinMocha.surface0,
@@ -718,7 +737,9 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
                     ),
                     child: _isSaving
                         ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: CatppuccinMocha.base))
-                        : Text(_isEditMode ? 'Update Note' : 'Save Note'),
+                        : Text(_isEditMode
+                            ? (widget.isPrepNote ? 'Update Prep Note' : 'Update Note')
+                            : (widget.isPrepNote ? 'Save Prep Note' : 'Save Note')),
                   ),
                 ],
               ),
@@ -738,6 +759,10 @@ class _QuickNoteDialogState extends ConsumerState<QuickNoteDialog> {
           child: Text(event.title,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: CatppuccinMocha.text)),
         ),
+        if (widget.isPrepNote) ...[
+          const SizedBox(width: 8),
+          _badge('PREP', Icons.event_note, CatppuccinMocha.peach, size: 10),
+        ],
         if (_isEditMode) ...[
           const SizedBox(width: 8),
           _badge('EDITING', Icons.edit, CatppuccinMocha.blue, size: 10),

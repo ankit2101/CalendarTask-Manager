@@ -75,6 +75,7 @@ class _NoteCardState extends ConsumerState<_NoteCard> {
       builder: (_) => QuickNoteDialog(
         event: event,
         existingRecord: widget.record,
+        isPrepNote: widget.record.isPrepNote,
       ),
     );
   }
@@ -86,7 +87,7 @@ class _NoteCardState extends ConsumerState<_NoteCard> {
         backgroundColor: CatppuccinMocha.surface0,
         title: const Text('Delete note?', style: TextStyle(color: CatppuccinMocha.text)),
         content: Text(
-          'This will delete the note for "${widget.record.title}" and all its linked to-do items.',
+          'This will delete the ${widget.record.isPrepNote ? 'prep ' : ''}note for "${widget.record.title}" and its linked to-do items.',
           style: const TextStyle(color: CatppuccinMocha.subtext1),
         ),
         actions: [
@@ -104,8 +105,10 @@ class _NoteCardState extends ConsumerState<_NoteCard> {
     );
 
     if (confirmed == true) {
-      await ref.read(todosProvider.notifier).deleteTodosByMeetingId(widget.record.eventId);
-      await ref.read(meetingHistoryProvider.notifier).deleteRecord(widget.record.eventId);
+      await ref.read(todosProvider.notifier).deleteTodosByMeetingId(
+          widget.record.eventId, fromPrepNote: widget.record.isPrepNote);
+      await ref.read(meetingHistoryProvider.notifier)
+          .deleteRecord(widget.record.eventId, isPrepNote: widget.record.isPrepNote);
     }
   }
 
@@ -134,8 +137,30 @@ class _NoteCardState extends ConsumerState<_NoteCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(record.title,
-                          style: const TextStyle(fontWeight: FontWeight.w600, color: CatppuccinMocha.text)),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(record.title,
+                                style: const TextStyle(fontWeight: FontWeight.w600, color: CatppuccinMocha.text),
+                                overflow: TextOverflow.ellipsis),
+                          ),
+                          if (record.isPrepNote) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: CatppuccinMocha.peach.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: CatppuccinMocha.peach.withValues(alpha: 0.4)),
+                              ),
+                              child: const Text(
+                                'PREP',
+                                style: TextStyle(color: CatppuccinMocha.peach, fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.5),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                       const SizedBox(height: 2),
                       if (savedDate != null)
                         Text(

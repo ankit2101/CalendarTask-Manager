@@ -114,6 +114,9 @@ class MeetingRecord {
   final String savedAt;
   final String? transcription;  // raw Whisper output
   final String? aiSummary;      // Claude-generated summary
+  // Pre-meeting prep note, kept as a separate record from the post-meeting
+  // note so both can coexist for the same eventId.
+  final bool isPrepNote;
 
   MeetingRecord({
     required this.eventId,
@@ -124,6 +127,7 @@ class MeetingRecord {
     required this.savedAt,
     this.transcription,
     this.aiSummary,
+    this.isPrepNote = false,
   });
 
   MeetingRecord copyWith({
@@ -140,6 +144,7 @@ class MeetingRecord {
     savedAt: savedAt,
     transcription: transcription ?? this.transcription,
     aiSummary: aiSummary ?? this.aiSummary,
+    isPrepNote: isPrepNote,
   );
 
   Map<String, dynamic> toJson() => {
@@ -151,6 +156,7 @@ class MeetingRecord {
     'savedAt': savedAt,
     'transcription': transcription,
     'aiSummary': aiSummary,
+    'isPrepNote': isPrepNote,
   };
 
   factory MeetingRecord.fromJson(Map<String, dynamic> json) => MeetingRecord(
@@ -164,5 +170,6 @@ class MeetingRecord {
     savedAt: json['savedAt'] as String,
     transcription: json['transcription'] as String?,
     aiSummary: json['aiSummary'] as String?,
+    isPrepNote: json['isPrepNote'] as bool? ?? false,
   );
 }

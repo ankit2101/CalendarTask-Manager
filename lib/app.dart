@@ -71,7 +71,12 @@ class _CalendarTaskAppState extends ConsumerState<CalendarTaskApp> {
 
   void _startPoller() {
     final settings = ref.read(settingsProvider);
-    final notedIds = ref.read(meetingHistoryProvider).map((r) => r.eventId).toSet();
+    // Prep notes (taken ahead of the meeting) don't count as "noted" here —
+    // the post-meeting note prompt should still fire even if a prep note exists.
+    final notedIds = ref.read(meetingHistoryProvider)
+        .where((r) => !r.isPrepNote)
+        .map((r) => r.eventId)
+        .toSet();
     final dismissedIds = ref.read(dismissedMeetingsProvider);
 
     MeetingPoller.instance.start(
