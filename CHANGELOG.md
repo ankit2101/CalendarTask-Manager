@@ -4,6 +4,13 @@ All notable changes to CalendarTask Manager are documented here.
 
 ---
 
+## [4.2.0] — 2026-07-02
+
+### Added
+- **Pre-meeting prep notes** — write notes on an upcoming meeting (agenda, talking points, questions) before it starts, then refer back to them once the meeting is live. Prep notes are stored as a separate record per event (keyed on event ID + note kind) alongside the existing live/post-meeting note, so the two never overwrite each other's saved content or synced to-dos. Action-item extraction is disabled for prep notes, since there's nothing to extract before the meeting happens — it remains available once the meeting is live or has ended.
+
+---
+
 ## [4.1.0] — 2026-06-18
 
 ### Added
